@@ -3,7 +3,6 @@ package io.helix.core.model;
 public enum TimelineEventType {
   GC_PAUSE,
   FULL_GC,
-  THREAD_BLOCKED,
   OOM,
   DEOPT,
   SAFEPOINT,
