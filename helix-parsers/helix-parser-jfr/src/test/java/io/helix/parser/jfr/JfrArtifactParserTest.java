@@ -1,0 +1,137 @@
+package io.helix.parser.jfr;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.helix.core.model.ArtifactType;
+import io.helix.core.model.ParsedArtifact;
+import io.helix.core.model.TimelineEventType;
+import io.helix.core.model.jfr.JfrRecordingData;
+import io.helix.core.spi.ParseContext;
+import java.nio.file.Path;
+import jdk.jfr.Event;
+import jdk.jfr.Name;
+import jdk.jfr.Recording;
+import jdk.jfr.StackTrace;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class JfrArtifactParserTest {
+  @TempDir
+  Path tempDir;
+
+  @Test
+  void recognizesJfrFilesAndHints() {
+    JfrArtifactParser parser = new JfrArtifactParser();
+
+    assertThat(parser.canParse(Path.of("profile.jfr"), null)).isTrue();
+    assertThat(parser.canParse(Path.of("profile.bin"), ArtifactType.JFR)).isTrue();
+    assertThat(parser.canParse(Path.of("gc.log"), ArtifactType.GC_LOG)).isFalse();
+  }
+
+  @Test
+  void parsesRequiredJfrEventTypesFromRecording() throws Exception {
+    Path recording = tempDir.resolve("phase5.jfr");
+    writeRecording(recording);
+
+    ParsedArtifact parsed = new JfrArtifactParser().parse(recording, ParseContext.defaults());
+    JfrRecordingData data = (JfrRecordingData) parsed.data().get(JfrArtifactParser.JFR_DATA_KEY);
+
+    assertThat(data.events())
+        .extracting("eventType")
+        .contains(
+            "jdk.ExecutionSample",
+            "jdk.ObjectAllocationOutsideTLAB",
+            "jdk.MonitorEnter",
+            "jdk.FileRead",
+            "jdk.Deoptimization",
+            "jdk.VirtualThreadPinned");
+    assertThat(data.events())
+        .filteredOn(event -> event.eventType().equals("jdk.ObjectAllocationOutsideTLAB"))
+        .anySatisfy(event -> {
+          assertThat(event.bytes()).isEqualTo(64L * 1024L * 1024L);
+          assertThat(event.className()).contains("byte");
+        });
+    assertThat(parsed.timelineEvents())
+        .extracting("type")
+        .contains(
+            TimelineEventType.CPU_SPIKE,
+            TimelineEventType.ALLOCATION_PRESSURE,
+            TimelineEventType.THREAD_BLOCKED,
+            TimelineEventType.BLOCKING_IO,
+            TimelineEventType.DEOPT,
+            TimelineEventType.VIRTUAL_THREAD_PINNED);
+  }
+
+  private static void writeRecording(Path path) throws Exception {
+    try (Recording recording = new Recording()) {
+      recording.enable("jdk.ExecutionSample").withStackTrace();
+      recording.enable("jdk.ObjectAllocationOutsideTLAB").withStackTrace();
+      recording.enable("jdk.MonitorEnter").withStackTrace();
+      recording.enable("jdk.FileRead").withStackTrace();
+      recording.enable("jdk.Deoptimization").withStackTrace();
+      recording.enable("jdk.VirtualThreadPinned").withStackTrace();
+      recording.start();
+      new ExecutionSampleEvent().commit();
+      AllocationEvent allocation = new AllocationEvent();
+      allocation.allocationSize = 64L * 1024L * 1024L;
+      allocation.objectClass = "byte[]";
+      allocation.commit();
+      MonitorEvent monitor = new MonitorEvent();
+      monitor.monitorClass = "java.lang.Object";
+      monitor.begin();
+      Thread.sleep(5);
+      monitor.commit();
+      FileReadEvent fileRead = new FileReadEvent();
+      fileRead.path = "/tmp/slow.data";
+      fileRead.bytesRead = 4096;
+      fileRead.begin();
+      Thread.sleep(5);
+      fileRead.commit();
+      DeoptimizationEvent deopt = new DeoptimizationEvent();
+      deopt.reason = "unstable_if";
+      deopt.method = "com.example.Hot.method";
+      deopt.commit();
+      VirtualThreadPinnedEvent pinned = new VirtualThreadPinnedEvent();
+      pinned.begin();
+      Thread.sleep(5);
+      pinned.commit();
+      recording.stop();
+      recording.dump(path);
+    }
+  }
+
+  @Name("jdk.ExecutionSample")
+  @StackTrace(true)
+  static class ExecutionSampleEvent extends Event {}
+
+  @Name("jdk.ObjectAllocationOutsideTLAB")
+  @StackTrace(true)
+  static class AllocationEvent extends Event {
+    long allocationSize;
+    String objectClass;
+  }
+
+  @Name("jdk.MonitorEnter")
+  @StackTrace(true)
+  static class MonitorEvent extends Event {
+    String monitorClass;
+  }
+
+  @Name("jdk.FileRead")
+  @StackTrace(true)
+  static class FileReadEvent extends Event {
+    String path;
+    long bytesRead;
+  }
+
+  @Name("jdk.Deoptimization")
+  @StackTrace(true)
+  static class DeoptimizationEvent extends Event {
+    String reason;
+    String method;
+  }
+
+  @Name("jdk.VirtualThreadPinned")
+  @StackTrace(true)
+  static class VirtualThreadPinnedEvent extends Event {}
+}
