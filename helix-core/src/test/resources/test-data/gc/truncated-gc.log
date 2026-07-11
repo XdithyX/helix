@@ -1,0 +1,4 @@
+[2026-01-01T00:00:00.000+0000][0.100s][info][gc] Using G1
+[2026-01-01T00:00:01.000+0000][1.000s][info][gc,start] GC(0) Pause Young (Normal) (G1 Evacuation Pause)
+[2026-01-01T00:00:01.010+0000][1.010s][info][gc,heap ] GC(0) Eden: 128M(128M)->0B(128M) Heap: 256M(512M)->128M(512M)
+[2026-01-01T00:00:02.000+0000][2.000s][info][gc     ] GC(1) Pause Young (Normal) (G1 Evacuation Pause) 256M->128M(512M) 10.000ms

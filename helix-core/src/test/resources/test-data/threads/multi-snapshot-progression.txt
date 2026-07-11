@@ -1,0 +1,27 @@
+2026-01-01T00:03:00Z
+Full thread dump OpenJDK 64-Bit Server VM:
+
+"stuck-worker" #41 prio=5 os_prio=31 tid=0x41 nid=0x401 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.Progression.waitForever(Progression.java:11)
+        - waiting to lock <0x0000000700003000> (a java.lang.Object)
+        at com.example.Progression.run(Progression.java:7)
+
+"owner-worker" #42 prio=5 os_prio=31 tid=0x42 nid=0x402 runnable
+   java.lang.Thread.State: RUNNABLE
+        at com.example.Progression.owner(Progression.java:20)
+        - locked <0x0000000700003000> (a java.lang.Object)
+
+2026-01-01T00:03:10Z
+Full thread dump OpenJDK 64-Bit Server VM:
+
+"stuck-worker" #41 prio=5 os_prio=31 tid=0x41 nid=0x401 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.Progression.waitForever(Progression.java:11)
+        - waiting to lock <0x0000000700003000> (a java.lang.Object)
+        at com.example.Progression.run(Progression.java:7)
+
+"owner-worker" #42 prio=5 os_prio=31 tid=0x42 nid=0x402 runnable
+   java.lang.Thread.State: RUNNABLE
+        at com.example.Progression.owner(Progression.java:20)
+        - locked <0x0000000700003000> (a java.lang.Object)

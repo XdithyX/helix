@@ -1,0 +1,18 @@
+<verbosegc version="2.0">
+  <af type="allocation failure" id="1" timestamp="2026-01-01T00:00:01Z" intervalms="1000.000">
+    <gc type="scavenge" id="1">
+      <mem-info beforebytes="805306368" afterbytes="402653184" totalbytes="2147483648" />
+      <mem type="nursery" freebytesbefore="67108864" freebytesafter="469762048" totalbytes="536870912" />
+      <mem type="tenure" freebytesbefore="1409286144" freebytesafter="1409286144" totalbytes="1610612736" />
+      <time totalms="45.000" />
+    </gc>
+  </af>
+  <af type="global allocation failure" id="2" timestamp="2026-01-01T00:00:05Z" intervalms="5000.000">
+    <gc type="global" id="2">
+      <mem-info beforebytes="1610612736" afterbytes="805306368" totalbytes="2147483648" />
+      <mem type="nursery" freebytesbefore="33554432" freebytesafter="503316480" totalbytes="536870912" />
+      <mem type="tenure" freebytesbefore="503316480" freebytesafter="872415232" totalbytes="1610612736" />
+      <time totalms="1500.000" />
+    </gc>
+  </af>
+</verbosegc>

@@ -1,0 +1,38 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x0000000100012345, pid=1234, tid=5678
+#
+# JRE version: OpenJDK Runtime Environment (17.0.1+12)
+# Java VM: OpenJDK 64-Bit Server VM (17.0.1+12, mixed mode, sharing, tiered, compressed oops, g1 gc, bsd-amd64)
+# Problematic frame:
+# C  [libnative_app.dylib+0x12345]  Java_com_example_Native_crash+0x15
+#
+---------------  T H R E A D  ---------------
+Current thread (0x0000600000001000):  JavaThread "main" [_thread_in_native, id=5678]
+
+Native frames:
+C  [libnative_app.dylib+0x12345]  Java_com_example_Native_crash+0x15
+C  [libjvm.dylib+0x45678]  JavaCalls::call_helper+0x80
+
+Registers:
+RAX=0x0 RBX=0x00000000deadbeef RBP=0x000000016f00ff00
+
+Heap:
+ garbage-first heap total 2048M, used 512M
+
+VM Arguments:
+jvm_args: -Xmx2g -XX:+UseG1GC
+
+Environment Variables:
+OS: macOS x86_64 14.0
+CPU: 8 cores
+
+Compiled method:
+  123  b  3       com.example.Native::crash (12 bytes)
+
+Dynamic libraries:
+0x0000000100000000 /app/libnative_app.dylib
+0x0000000110000000 /Library/Java/lib/server/libjvm.dylib
+
+END.

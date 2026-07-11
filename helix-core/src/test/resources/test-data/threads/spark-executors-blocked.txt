@@ -1,0 +1,46 @@
+2026-01-01T00:01:00Z
+Full thread dump OpenJDK 64-Bit Server VM:
+
+"Executor task launch worker-1" #21 prio=5 os_prio=31 tid=0x1 nid=0x201 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.spark.ShuffleWriter.write(ShuffleWriter.java:42)
+        - waiting to lock <0x0000000700001000> (a java.lang.Object)
+        at com.example.spark.TaskRunner.run(TaskRunner.java:31)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:500)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+
+"Executor task launch worker-2" #22 prio=5 os_prio=31 tid=0x2 nid=0x202 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.spark.ShuffleWriter.write(ShuffleWriter.java:42)
+        - waiting to lock <0x0000000700001000> (a java.lang.Object)
+        at com.example.spark.TaskRunner.run(TaskRunner.java:31)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:500)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+
+"Executor task launch worker-3" #23 prio=5 os_prio=31 tid=0x3 nid=0x203 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.spark.ShuffleWriter.write(ShuffleWriter.java:42)
+        - waiting to lock <0x0000000700001000> (a java.lang.Object)
+        at com.example.spark.TaskRunner.run(TaskRunner.java:31)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:500)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+
+"Executor task launch worker-4" #24 prio=5 os_prio=31 tid=0x4 nid=0x204 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.spark.ShuffleWriter.write(ShuffleWriter.java:42)
+        - waiting to lock <0x0000000700001000> (a java.lang.Object)
+        at com.example.spark.TaskRunner.run(TaskRunner.java:31)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:500)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+
+"Executor task launch worker-5" #25 prio=5 os_prio=31 tid=0x5 nid=0x205 runnable
+   java.lang.Thread.State: RUNNABLE
+        at com.example.spark.ShuffleWriter.write(ShuffleWriter.java:42)
+        at com.example.spark.TaskRunner.run(TaskRunner.java:31)
+        at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:500)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+
+"shuffle-owner" #30 prio=5 os_prio=31 tid=0x30 nid=0x230 runnable
+   java.lang.Thread.State: RUNNABLE
+        at com.example.spark.ShuffleLockOwner.flush(ShuffleLockOwner.java:12)
+        - locked <0x0000000700001000> (a java.lang.Object)

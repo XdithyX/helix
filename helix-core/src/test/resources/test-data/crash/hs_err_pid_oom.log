@@ -1,0 +1,25 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGSEGV (0xb) at pc=0x0000000000000000, pid=3234, tid=8888
+# OutOfMemoryError: Java heap space
+#
+# JRE version: OpenJDK Runtime Environment (17.0.8+7)
+# Java VM: OpenJDK 64-Bit Server VM (17.0.8+7, mixed mode, sharing, tiered, compressed oops, g1 gc, linux-amd64)
+# Problematic frame:
+# J 123 c1 java.util.Arrays.copyOf([BI)[B java.base@17.0.8
+#
+---------------  T H R E A D  ---------------
+Current thread (0x00007f0022222222):  JavaThread "http-executor-1" [_thread_in_Java, id=8888]
+
+Heap:
+ garbage-first heap total 4096M, used 4095M
+
+VM Arguments:
+jvm_args: -Xmx4g -XX:+HeapDumpOnOutOfMemoryError
+
+Environment Variables:
+OS: Linux x86_64 6.1
+CPU: 32 cores
+
+END.

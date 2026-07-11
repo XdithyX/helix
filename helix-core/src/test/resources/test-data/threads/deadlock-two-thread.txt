@@ -1,0 +1,22 @@
+2026-01-01T00:00:00Z
+Full thread dump OpenJDK 64-Bit Server VM:
+
+"Deadlock-1" #11 prio=5 os_prio=31 cpu=12.50ms tid=0x0000000101 nid=0x101 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.Deadlock.first(Deadlock.java:21)
+        - waiting to lock <0x0000000700000001> (a java.lang.Object)
+        - locked <0x0000000700000002> (a java.lang.Object)
+        at com.example.Deadlock.run(Deadlock.java:15)
+
+"Deadlock-2" #12 prio=5 os_prio=31 cpu=14.00ms tid=0x0000000102 nid=0x102 waiting for monitor entry
+   java.lang.Thread.State: BLOCKED (on object monitor)
+        at com.example.Deadlock.second(Deadlock.java:31)
+        - waiting to lock <0x0000000700000002> (a java.lang.Object)
+        - locked <0x0000000700000001> (a java.lang.Object)
+        at com.example.Deadlock.run(Deadlock.java:25)
+
+"Reference Handler" #2 daemon prio=10 os_prio=31 tid=0x0000000103 nid=0x103 waiting on condition
+   java.lang.Thread.State: WAITING (on object monitor)
+        at java.lang.Object.wait(Native Method)
+        - waiting on <0x0000000700000003> (a java.lang.ref.Reference$Lock)
+        at java.lang.ref.Reference.processPendingReferences(Reference.java:253)

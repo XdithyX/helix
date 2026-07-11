@@ -1,0 +1,25 @@
+#
+# A fatal error has been detected by the Java Runtime Environment:
+#
+#  SIGABRT (0x6) at pc=0x00007fff20000000, pid=2234, tid=7788
+#
+# JRE version: OpenJDK Runtime Environment (21.0.1+12)
+# Java VM: OpenJDK 64-Bit Server VM (21.0.1+12, mixed mode, sharing, tiered, compressed oops, g1 gc, linux-amd64)
+# Problematic frame:
+# C  [libjvm.so+0xabc]  report_vm_error+0x33
+#
+---------------  T H R E A D  ---------------
+Current thread (0x00007f0011111111):  JavaThread "VM Thread" [_thread_in_vm, id=7788]
+
+Native frames:
+C  [libjvm.so+0xabc]  report_vm_error+0x33
+C  [libc.so.6+0x123]  abort+0x12
+
+Registers:
+RAX=0x0000000000000006 RBX=0x00007f0011111111
+
+Environment Variables:
+OS: Linux x86_64 6.1
+CPU: 16 cores numa
+
+END.
