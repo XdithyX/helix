@@ -1,0 +1,75 @@
+package io.helix.correlation.rules
+
+import io.helix.core.model.TimelineEvent;
+import io.helix.core.model.TimelineEventType;
+import io.helix.correlation.DroolsCorrelationContext;
+
+global io.helix.correlation.DroolsCorrelationContext context;
+
+rule "GCPressure_ThreadContention_Correlation"
+when
+  $gc : TimelineEvent(type() == TimelineEventType.GC_PAUSE, duration() != null, duration().toMillis() > 500L)
+  $blocked : TimelineEvent(type() == TimelineEventType.THREAD_BLOCKED)
+  eval(DroolsCorrelationContext.withinAfter($gc, $blocked, 1000L))
+then
+  context.addGcPauseThreadContention($gc, $blocked);
+end
+
+rule "AllocationPressure_HeapLeak_Correlation"
+when
+  $allocation : TimelineEvent(type() == TimelineEventType.ALLOCATION_PRESSURE)
+  eval(context.hasHeapLeakSuspects())
+then
+  context.addAllocationPressureHeapLeak($allocation);
+end
+
+rule "FullGC_OOM_Correlation"
+when
+  $fullGc : TimelineEvent(type() == TimelineEventType.FULL_GC)
+  $oom : TimelineEvent(type() == TimelineEventType.OOM)
+  eval(DroolsCorrelationContext.withinAfter($fullGc, $oom, 300000L))
+then
+  context.addFullGcOom($fullGc, $oom);
+end
+
+rule "ThreadPoolExhaustion_GCPressure_Correlation"
+when
+  $pool : TimelineEvent(type() == TimelineEventType.THREAD_POOL_EXHAUSTED)
+  $gc : TimelineEvent(type() == TimelineEventType.GC_PAUSE || type() == TimelineEventType.FULL_GC)
+  eval(DroolsCorrelationContext.withinEither($pool, $gc, 1000L))
+then
+  context.addThreadPoolGcPressure($pool, $gc);
+end
+
+rule "Deoptimization_CPUSpike_Correlation"
+when
+  $deopt : TimelineEvent(type() == TimelineEventType.DEOPT)
+  $cpu : TimelineEvent(type() == TimelineEventType.CPU_SPIKE)
+  eval(DroolsCorrelationContext.withinAfter($deopt, $cpu, 100L))
+then
+  context.addDeoptCpuSpike($deopt, $cpu);
+end
+
+rule "RepeatedSystemGC_FrameworkTrigger_Correlation"
+when
+  $gc : TimelineEvent(type() == TimelineEventType.SYSTEM_GC)
+  eval(context.systemGcCount() >= 2)
+then
+  context.addRepeatedSystemGc();
+end
+
+rule "HumongousAllocation_RegionSizing_Correlation"
+when
+  $humongous : TimelineEvent(type() == TimelineEventType.HUMONGOUS_ALLOCATION)
+then
+  context.addHumongousAllocation($humongous);
+end
+
+rule "VirtualThreadPinning_BlockingIO_Correlation"
+when
+  $pinned : TimelineEvent(type() == TimelineEventType.VIRTUAL_THREAD_PINNED)
+  $io : TimelineEvent(type() == TimelineEventType.BLOCKING_IO)
+  eval(DroolsCorrelationContext.sameThread($pinned, $io) && DroolsCorrelationContext.withinEither($pinned, $io, 1000L))
+then
+  context.addVirtualThreadPinningBlockingIo($pinned, $io);
+end
