@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.ParsedArtifact;
@@ -43,7 +44,15 @@ class GcAnalyzerTest {
     assertThat(findings)
         .filteredOn(finding -> finding.title().equals("Explicit System.gc() detected"))
         .singleElement()
-        .satisfies(finding -> assertThat(finding.severity()).isEqualTo(FindingSeverity.HIGH));
+        .satisfies(finding -> {
+          assertThat(finding.severity()).isEqualTo(FindingSeverity.HIGH);
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.FACT);
+        });
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("Heap-after-GC leak gradient"))
+        .singleElement()
+        .extracting(Finding::reliability)
+        .isEqualTo(FindingReliability.HEURISTIC);
   }
 
   private static List<GcEvent> phaseFourEvents() {
