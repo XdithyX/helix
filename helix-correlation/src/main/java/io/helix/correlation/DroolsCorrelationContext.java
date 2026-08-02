@@ -5,6 +5,7 @@ import io.helix.core.model.CorrelatedEvent;
 import io.helix.core.model.CorrelationSummary;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -93,10 +94,14 @@ public final class DroolsCorrelationContext {
 
   public void addAllocationPressureHeapLeak(TimelineEvent allocation) {
     String rule = "AllocationPressure_HeapLeak_Correlation";
+    if (!rememberRule(rule)) {
+      return;
+    }
     Optional<ParsedArtifact> heapWithLeak = heapWithLeakSuspects();
     if (heapWithLeak.isEmpty()) {
       return;
     }
+    TimelineEvent firstAllocation = events(TimelineEventType.ALLOCATION_PRESSURE).getFirst();
     ParsedArtifact heap = heapWithLeak.get();
     TimelineEvent heapEvent = new TimelineEvent(
         heap.artifact().capturedAt(),
@@ -104,19 +109,16 @@ public final class DroolsCorrelationContext {
         TimelineEventType.ALLOCATION_PRESSURE,
         null,
         mapOf("heap.leak.path", "present"));
-    if (!remember(rule, allocation, heapEvent)) {
-      return;
-    }
     String explanation = "Allocation pressure was observed in the same analysis window as heap leak suspects in "
         + heap.artifact().id() + ".";
-    correlated.add(new CorrelatedEvent(rule, allocation, heapEvent, 0.74, explanation));
+    correlated.add(new CorrelatedEvent(rule, firstAllocation, heapEvent, 0.74, explanation));
     findings.add(finding(
         "correlation-allocation-heap-leak",
         FindingSeverity.HIGH,
         FindingCategory.MEMORY,
         "Allocation pressure aligns with heap leak suspects",
         explanation,
-        List.of(allocation, heapEvent),
+        List.of(firstAllocation, heapEvent),
         "Compare allocation hotspots with the heap dump retention paths.",
         RemediationType.CODE_CHANGE,
         mapOf("rule", rule)));
@@ -210,21 +212,25 @@ public final class DroolsCorrelationContext {
 
   public void addHumongousAllocation(TimelineEvent humongous) {
     String rule = "HumongousAllocation_RegionSizing_Correlation";
-    if (!remember(rule, humongous, humongous)) {
+    if (!rememberRule(rule)) {
       return;
     }
-    String explanation = "Humongous allocation pressure indicates possible G1 region size or large-object allocation issues.";
-    correlated.add(new CorrelatedEvent(rule, humongous, humongous, 0.70, explanation));
+    List<TimelineEvent> events = events(TimelineEventType.HUMONGOUS_ALLOCATION);
+    TimelineEvent first = events.getFirst();
+    TimelineEvent last = events.getLast();
+    String explanation = events.size()
+        + " humongous allocation event(s) indicate possible G1 region size or large-object allocation issues.";
+    correlated.add(new CorrelatedEvent(rule, first, last, 0.70, explanation));
     findings.add(finding(
         "correlation-humongous-region-" + findings.size(),
         FindingSeverity.MEDIUM,
         FindingCategory.GC,
         "Humongous allocation suggests region sizing review",
         explanation,
-        List.of(humongous),
+        List.of(first, last),
         "Confirm object sizes before changing -XX:G1HeapRegionSize.",
         RemediationType.JVM_FLAG,
-        mapOf("rule", rule)));
+        mapOf("rule", rule, "count", events.size())));
   }
 
   public void addVirtualThreadPinningBlockingIo(TimelineEvent pinned, TimelineEvent io) {
@@ -293,6 +299,10 @@ public final class DroolsCorrelationContext {
     return matchedKeys.add(rule + ":" + eventKey(primary) + ":" + eventKey(related));
   }
 
+  private boolean rememberRule(String rule) {
+    return matchedKeys.add(rule);
+  }
+
   private static String eventKey(TimelineEvent event) {
     return event.artifactId() + ":" + event.type() + ":" + event.timestamp();
   }
@@ -317,7 +327,8 @@ public final class DroolsCorrelationContext {
         evidence.stream().map(TimelineEvent::artifactId).distinct().toList(),
         evidence,
         List.of(new Remediation(remediation, remediationType, "", explanation)),
-        rawData);
+        rawData)
+        .withReliability(FindingReliability.HEURISTIC);
   }
 
   private static String attr(TimelineEvent event, String... names) {
