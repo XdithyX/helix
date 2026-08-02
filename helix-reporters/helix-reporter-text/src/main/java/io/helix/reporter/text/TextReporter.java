@@ -4,7 +4,9 @@ import io.helix.core.model.Artifact;
 import io.helix.core.model.DiagnosticReport;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingSeverity;
+import io.helix.core.model.InvestigationResult;
 import io.helix.core.model.Remediation;
+import io.helix.core.model.ToolTrace;
 import io.helix.core.spi.ReportOptions;
 import io.helix.core.spi.Reporter;
 import java.io.IOException;
@@ -69,6 +71,10 @@ public final class TextReporter implements Reporter {
       writer.println(report.llmNarrative());
     }
 
+    if (report.investigation() != null) {
+      printInvestigation(writer, report.investigation(), options);
+    }
+
     writer.flush();
   }
 
@@ -91,6 +97,7 @@ public final class TextReporter implements Reporter {
   private static void printFinding(PrintWriter writer, Finding finding, ReportOptions options) {
     writer.printf("[%s] %s%n", finding.severity(), finding.title());
     writer.println(finding.explanation());
+    writer.println("Reliability: " + finding.reliability());
     writer.printf("Confidence: %.2f%n", finding.confidence());
     for (Remediation remediation : finding.remediations()) {
       writer.printf("- Remediation (%s): %s%n", remediation.type(), remediation.description());
@@ -102,5 +109,27 @@ public final class TextReporter implements Reporter {
       writer.println("Raw data: " + finding.rawData());
     }
     writer.println();
+  }
+
+  private static void printInvestigation(
+      PrintWriter writer,
+      InvestigationResult investigation,
+      ReportOptions options) {
+    writer.println();
+    writer.println("Investigation");
+    writer.println("-------------");
+    writer.println("Question: " + investigation.question());
+    writer.println("Status: " + investigation.status());
+    writer.println("Answer: " + investigation.answer());
+    writer.println("Tool calls: " + investigation.toolTraces().size());
+    for (ToolTrace trace : investigation.toolTraces()) {
+      Object status = trace.result().getOrDefault("status", "");
+      Object summary = trace.result().getOrDefault("summary", "");
+      writer.printf("- %s [%s]: %s%n", trace.toolName(), status, summary);
+      if (options.includeRawData()) {
+        writer.println("  Arguments: " + trace.arguments());
+        writer.println("  Result: " + trace.result());
+      }
+    }
   }
 }
