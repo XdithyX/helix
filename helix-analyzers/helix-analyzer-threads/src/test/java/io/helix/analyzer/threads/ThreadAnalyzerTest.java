@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.ParsedArtifact;
@@ -50,12 +51,18 @@ class ThreadAnalyzerTest {
         .singleElement()
         .satisfies(finding -> {
           assertThat(finding.severity()).isEqualTo(FindingSeverity.CRITICAL);
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.FACT);
           assertThat(finding.explanation())
               .contains("Deadlock-1 waits for")
               .contains("held by Deadlock-2")
               .contains("Deadlock-2 waits for")
               .contains("held by Deadlock-1");
         });
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().startsWith("Thread pool exhaustion"))
+        .singleElement()
+        .extracting(Finding::reliability)
+        .isEqualTo(FindingReliability.HEURISTIC);
   }
 
   @Test
