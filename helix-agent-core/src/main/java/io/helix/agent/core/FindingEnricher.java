@@ -65,7 +65,8 @@ public final class FindingEnricher {
         finding.artifactIds(),
         finding.evidence(),
         finding.remediations(),
-        rawData);
+        rawData,
+        finding.reliability());
   }
 
   public static List<TimelineEvent> evidenceFor(List<Finding> findings) {
