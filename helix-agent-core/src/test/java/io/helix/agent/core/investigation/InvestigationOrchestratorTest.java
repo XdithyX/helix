@@ -102,7 +102,12 @@ class InvestigationOrchestratorTest {
                 InvestigationOrchestrator.INSUFFICIENT_TOOL);
         assertThat(request.initialPrompt())
             .contains("artifact-1")
-            .doesNotContain("/secret/production/threads.txt");
+            .contains("\"total\":1")
+            .contains("\"THREADING\":1")
+            .doesNotContain("/secret/production/threads.txt")
+            .doesNotContain("Blocked workers")
+            .doesNotContain("Several worker threads are blocked.")
+            .doesNotContain("secret-finding-value");
         return session;
       }
     };
@@ -119,7 +124,7 @@ class InvestigationOrchestratorTest {
         List.of("artifact-1"),
         List.of(),
         List.of(),
-        Map.of(),
+        Map.of("internal", "secret-finding-value"),
         FindingReliability.FACT);
     DiagnosticReport report = new DiagnosticReport(
         "report-1",
