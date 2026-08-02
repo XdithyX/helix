@@ -86,11 +86,17 @@ public final class JfrAnalyzer implements Analyzer {
       ParsedArtifact artifact,
       List<JfrEvent> events,
       List<Finding> findings) {
-    List<JfrEvent> allocations = events.stream()
+    List<JfrEvent> sampledAllocations = events.stream()
+        .filter(event -> event.eventType().equals("jdk.ObjectAllocationSample"))
+        .filter(event -> event.bytes() > 0)
+        .toList();
+    List<JfrEvent> exactAllocations = events.stream()
         .filter(event -> event.eventType().equals("jdk.ObjectAllocationInNewTLAB")
             || event.eventType().equals("jdk.ObjectAllocationOutsideTLAB"))
         .filter(event -> event.bytes() > 0)
         .toList();
+    boolean sampled = !sampledAllocations.isEmpty();
+    List<JfrEvent> allocations = sampled ? sampledAllocations : exactAllocations;
     if (allocations.isEmpty()) {
       return;
     }
@@ -110,8 +116,11 @@ public final class JfrAnalyzer implements Analyzer {
         top.bytes() >= 100 * 1024 * 1024 ? FindingSeverity.MEDIUM : FindingSeverity.INFO,
         FindingCategory.MEMORY,
         "JFR allocation hotspots",
-        "Top allocation site is " + top.frame() + " with " + mb(top.bytes()) + " MB allocated.",
-        0.84,
+        sampled
+            ? "Top sampled allocation site is " + top.frame() + " with " + format(mb(top.bytes()))
+                + " MB estimated allocation weight across " + allocations.size() + " sample event(s)."
+            : "Top allocation site is " + top.frame() + " with " + format(mb(top.bytes())) + " MB allocated.",
+        sampled ? 0.78 : 0.84,
         List.of(artifact.artifact().id()),
         List.of(),
         List.of(new Remediation(
@@ -120,6 +129,8 @@ public final class JfrAnalyzer implements Analyzer {
             "Reduce short-lived allocations or reuse buffers where ownership is clear.",
             "JFR allocation events connect allocation pressure to code locations.")),
         mapOf(
+            "measurement", sampled ? "SAMPLED_WEIGHT" : "EXACT_BYTES",
+            "eventCount", allocations.size(),
             "hotspots", hotspots,
             "allocationFlameGraph", flameGraph(allocations, "allocation"))));
   }
@@ -129,8 +140,7 @@ public final class JfrAnalyzer implements Analyzer {
       List<JfrEvent> events,
       List<Finding> findings) {
     List<JfrEvent> waits = events.stream()
-        .filter(event -> event.eventType().equals("jdk.MonitorEnter")
-            || event.eventType().equals("jdk.JavaMonitorWait"))
+        .filter(event -> event.eventType().equals("jdk.JavaMonitorEnter"))
         .filter(event -> !event.duration().isZero())
         .toList();
     if (waits.isEmpty()) {
