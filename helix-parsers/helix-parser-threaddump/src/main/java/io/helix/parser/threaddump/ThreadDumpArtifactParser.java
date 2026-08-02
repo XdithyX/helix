@@ -138,6 +138,10 @@ public final class ThreadDumpArtifactParser implements ArtifactParser {
 
     for (String line : text.split("\n", -1)) {
       lineNumber++;
+      if (line.startsWith("Found one Java-level deadlock:")
+          || line.matches("^Found \\d+ Java-level deadlocks?:.*")) {
+        break;
+      }
       Optional<Instant> timestamp = parseTimestamp(line);
       if (timestamp.isPresent()) {
         pendingTimestamp = timestamp.get();
