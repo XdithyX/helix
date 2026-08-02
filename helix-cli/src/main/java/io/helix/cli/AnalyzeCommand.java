@@ -2,6 +2,10 @@ package io.helix.cli;
 
 import io.helix.agent.core.AgentContext;
 import io.helix.agent.core.AgentOrchestrator;
+import io.helix.agent.core.investigation.InvestigationContext;
+import io.helix.agent.core.investigation.InvestigationModel;
+import io.helix.agent.core.investigation.InvestigationOrchestrator;
+import io.helix.agent.core.investigation.tools.DefaultDiagnosticTools;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.DiagnosticReport;
 import io.helix.core.model.Finding;
@@ -72,9 +76,19 @@ final class AnalyzeCommand implements Callable<Integer> {
   @Option(names = "--threshold", paramLabel = "<severity>", description = "Minimum severity: CRITICAL|HIGH|MEDIUM|LOW.")
   FindingSeverity threshold;
 
+  @Option(
+      names = "--question",
+      paramLabel = "<question>",
+      description = "Ask an evidence-backed question about the supplied JVM artifacts.")
+  String question;
+
   @Override
   public Integer call() throws IOException {
     validateTimeWindow();
+    if (question != null && !question.isBlank() && parent.noLlm) {
+      throw new CommandLine.ParameterException(
+          spec.commandLine(), "--question requires an available LLM; remove --no-llm");
+    }
 
     List<Path> normalizedFiles = files.stream()
         .map(path -> path.toAbsolutePath().normalize())
@@ -142,6 +156,15 @@ final class AnalyzeCommand implements Callable<Integer> {
         .toList();
     DiagnosticReport baseReport =
         DiagnosticReportFactory.fromParsedArtifacts(parsedArtifacts, filteredFindings, timeline, correlationResult);
+    if (question != null && !question.isBlank()) {
+      InvestigationModel model = ServiceLoader.load(InvestigationModel.class).stream()
+          .map(ServiceLoader.Provider::get)
+          .filter(InvestigationModel::isAvailable)
+          .findFirst()
+          .orElse(null);
+      return baseReport.withInvestigation(new InvestigationOrchestrator(DefaultDiagnosticTools.create())
+          .investigate(new InvestigationContext(question, baseReport, parsedArtifacts), model));
+    }
     return new AgentOrchestrator().analyze(baseReport, agentContext(baseReport));
   }
 
