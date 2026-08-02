@@ -36,7 +36,6 @@ class GcAnalyzerTest {
             "GC throughput below target",
             "GC cause breakdown",
             "Explicit System.gc() detected",
-            "Heap-after-GC leak gradient",
             "Humongous allocation GC pattern",
             "Frequent metadata-triggered GC",
             "Allocation rate summary",
@@ -49,10 +48,31 @@ class GcAnalyzerTest {
           assertThat(finding.reliability()).isEqualTo(FindingReliability.FACT);
         });
     assertThat(findings)
+        .extracting(Finding::title)
+        .doesNotContain("Heap-after-GC leak gradient");
+  }
+
+  @Test
+  void reportsLeakGradientOnlyAcrossARepresentativeWindow() {
+    Instant base = Instant.parse("2026-01-01T00:00:00Z");
+    List<GcEvent> events = List.of(
+        event("gc-0", base, 0, 10, "G1 Evacuation Pause", false, false, 300, 200, 100, 120, 100),
+        event("gc-1", base.plusSeconds(150), 150, 10, "G1 Evacuation Pause", false, false, 350, 225, 120, 140, 100),
+        event("gc-2", base.plusSeconds(300), 300, 10, "G1 Evacuation Pause", false, false, 400, 250, 140, 160, 100),
+        event("gc-3", base.plusSeconds(450), 450, 10, "G1 Evacuation Pause", false, false, 450, 275, 160, 180, 100),
+        event("gc-4", base.plusSeconds(600), 600, 10, "G1 Evacuation Pause", false, false, 500, 300, 180, 200, 100));
+
+    List<Finding> findings = new GcAnalyzer().analyze(
+        parsedArtifact(new GcLogData(events, GcLogFormat.UNIFIED, Map.of())),
+        new AnalysisContext(null, Map.of()));
+
+    assertThat(findings)
         .filteredOn(finding -> finding.title().equals("Heap-after-GC leak gradient"))
         .singleElement()
-        .extracting(Finding::reliability)
-        .isEqualTo(FindingReliability.HEURISTIC);
+        .satisfies(finding -> {
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.HEURISTIC);
+          assertThat(finding.rawData().toString()).contains("windowMillis=600000.0");
+        });
   }
 
   private static List<GcEvent> phaseFourEvents() {

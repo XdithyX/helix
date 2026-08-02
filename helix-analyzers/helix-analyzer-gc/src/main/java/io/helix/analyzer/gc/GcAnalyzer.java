@@ -26,6 +26,8 @@ public final class GcAnalyzer implements Analyzer {
   static final String GC_DATA_KEY = "gcLog";
   private static final double DEFAULT_PAUSE_WARNING_MS = 500.0;
   private static final double DEFAULT_THROUGHPUT_WARNING_PERCENT = 95.0;
+  private static final int MIN_LEAK_GRADIENT_SAMPLES = 5;
+  private static final Duration MIN_LEAK_GRADIENT_WINDOW = Duration.ofMinutes(5);
   private static final double HIGH_ALLOCATION_RATE_MB_PER_SEC = 512.0;
   private static final double HIGH_PROMOTION_RATE_MB_PER_SEC = 50.0;
 
@@ -364,19 +366,20 @@ public final class GcAnalyzer implements Analyzer {
         .filter(event -> event.heapAfterMb() != null)
         .map(event -> new Sample(event.timestamp(), event.uptime(), event.heapAfterMb()))
         .toList();
-    if (samples.size() < 3) {
+    if (samples.size() < MIN_LEAK_GRADIENT_SAMPLES) {
+      return null;
+    }
+
+    Sample first = samples.getFirst();
+    double windowMillis = elapsedMillis(first, samples.getLast());
+    if (windowMillis < MIN_LEAK_GRADIENT_WINDOW.toMillis()) {
       return null;
     }
 
     double[] x = new double[samples.size()];
     double[] y = new double[samples.size()];
-    Sample first = samples.getFirst();
     for (int i = 0; i < samples.size(); i++) {
-      double hours = Duration.between(first.timestamp(), samples.get(i).timestamp()).toMillis() / 3_600_000.0;
-      if (hours <= 0.0) {
-        hours = (samples.get(i).uptime().minus(first.uptime()).toMillis()) / 3_600_000.0;
-      }
-      x[i] = hours;
+      x[i] = elapsedMillis(first, samples.get(i)) / 3_600_000.0;
       y[i] = samples.get(i).heapAfterMb();
     }
 
@@ -406,7 +409,8 @@ public final class GcAnalyzer implements Analyzer {
     double rSquared = syy == 0.0 ? 1.0 : Math.max(0.0, 1.0 - (sse / syy));
     double standardError = x.length > 2 ? Math.sqrt((sse / (x.length - 2)) / sxx) : 0.0;
     double margin = 1.96 * standardError;
-    return new LeakGradient(samples.size(), slope, slope - margin, slope + margin, rSquared);
+    return new LeakGradient(
+        samples.size(), windowMillis, slope, slope - margin, slope + margin, rSquared);
   }
 
   private static RateSummary allocationRate(List<GcEvent> events) {
@@ -453,6 +457,14 @@ public final class GcAnalyzer implements Analyzer {
   }
 
   private static double elapsedMillis(GcEvent first, GcEvent last) {
+    double timestampMs = Duration.between(first.timestamp(), last.timestamp()).toMillis();
+    if (timestampMs > 0.0) {
+      return timestampMs;
+    }
+    return last.uptime().minus(first.uptime()).toMillis();
+  }
+
+  private static double elapsedMillis(Sample first, Sample last) {
     double timestampMs = Duration.between(first.timestamp(), last.timestamp()).toMillis();
     if (timestampMs > 0.0) {
       return timestampMs;
@@ -545,6 +557,7 @@ public final class GcAnalyzer implements Analyzer {
 
   public record LeakGradient(
       int sampleCount,
+      double windowMillis,
       double slopeMbPerHour,
       double confidenceLowMbPerHour,
       double confidenceHighMbPerHour,
