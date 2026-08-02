@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.TimelineEvent;
@@ -37,6 +38,7 @@ class RuleBasedCorrelatorTest {
         event(base, "gc", TimelineEventType.GC_PAUSE, Duration.ofMillis(900), Map.of("cause", "Allocation Failure")),
         event(base.plusMillis(500), "threads", TimelineEventType.THREAD_BLOCKED, Duration.ofMillis(200), Map.of("lock", "DataSourcePool")),
         event(base.plusSeconds(2), "jfr", TimelineEventType.ALLOCATION_PRESSURE, Duration.ZERO, Map.of("bytes", 104857600L)),
+        event(base.plusSeconds(2).plusMillis(100), "jfr", TimelineEventType.ALLOCATION_PRESSURE, Duration.ZERO, Map.of("bytes", 52428800L)),
         event(base.plusSeconds(3), "gc", TimelineEventType.FULL_GC, Duration.ofSeconds(4), Map.of()),
         event(base.plusSeconds(4), "crash", TimelineEventType.OOM, null, Map.of()),
         event(base.plusSeconds(5), "threads", TimelineEventType.THREAD_POOL_EXHAUSTED, null, Map.of("pool", "http")),
@@ -46,6 +48,7 @@ class RuleBasedCorrelatorTest {
         event(base.plusSeconds(7), "gc", TimelineEventType.SYSTEM_GC, Duration.ofSeconds(1), Map.of()),
         event(base.plusSeconds(8), "gc", TimelineEventType.SYSTEM_GC, Duration.ofSeconds(1), Map.of()),
         event(base.plusSeconds(9), "gc", TimelineEventType.HUMONGOUS_ALLOCATION, Duration.ofMillis(50), Map.of()),
+        event(base.plusSeconds(9).plusMillis(100), "gc", TimelineEventType.HUMONGOUS_ALLOCATION, Duration.ofMillis(50), Map.of()),
         event(base.plusSeconds(10), "jfr", TimelineEventType.VIRTUAL_THREAD_PINNED, Duration.ofMillis(500), Map.of("thread", "VirtualThread-1")),
         event(base.plusSeconds(10).plusMillis(100), "jfr", TimelineEventType.BLOCKING_IO, Duration.ofMillis(300), Map.of("thread", "VirtualThread-1", "io.target", "/tmp/pinned")));
 
@@ -68,6 +71,16 @@ class RuleBasedCorrelatorTest {
         .contains("GCPressure_ThreadContention_Correlation")
         .contains("VirtualThreadPinning_BlockingIO_Correlation");
     assertThat(result.summary().metrics()).containsEntry("correlationEngine", "drools");
+    assertThat(result.findings())
+        .extracting(Finding::reliability)
+        .containsOnly(FindingReliability.HEURISTIC);
+    assertThat(result.findings().stream()
+        .filter(finding -> finding.title().equals("Allocation pressure aligns with heap leak suspects")))
+        .hasSize(1);
+    assertThat(result.findings().stream()
+        .filter(finding -> finding.title().equals("Humongous allocation suggests region sizing review")))
+        .singleElement()
+        .satisfies(finding -> assertThat(finding.explanation()).startsWith("2 humongous allocation event(s)"));
   }
 
   private static TimelineEvent event(
