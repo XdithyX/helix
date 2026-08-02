@@ -126,7 +126,7 @@ public final class InvestigationOrchestrator {
         Available artifact summary:
         %s
 
-        Deterministic finding summary:
+        Deterministic finding index:
         %s
 
         Timeline event count: %d
@@ -139,7 +139,7 @@ public final class InvestigationOrchestrator {
                 "capturedAt", artifact.capturedAt().toString(),
                 "jvmFlavour", artifact.jvmFlavour().name()))
             .toList()),
-        AgentJson.toJson(context.report().findings()),
+        AgentJson.toJson(findingIndex(context)),
         context.report().timeline().size());
     return new InvestigationRequest(systemInstruction(), initialPrompt, definitions);
   }
@@ -148,6 +148,8 @@ public final class InvestigationOrchestrator {
     return """
         You are the Helix JVM investigation agent. Answer only from tool results and the supplied
         deterministic report. Use tools for targeted evidence instead of assuming details.
+        The initial finding index contains counts only; use search_findings to retrieve relevant
+        finding details.
         FACT findings may be treated as proven only within the artifact that supports them.
         DERIVED findings are calculations; HEURISTIC findings require corroboration.
         For direct questions, use the minimum tools needed. For causal questions, test plausible
@@ -198,5 +200,21 @@ public final class InvestigationOrchestrator {
 
   private static boolean isControlCall(ToolCall call) {
     return CONCLUDE_TOOL.equals(call.name()) || INSUFFICIENT_TOOL.equals(call.name());
+  }
+
+  private static Map<String, Object> findingIndex(InvestigationContext context) {
+    Map<String, Long> bySeverity = new LinkedHashMap<>();
+    Map<String, Long> byCategory = new LinkedHashMap<>();
+    Map<String, Long> byReliability = new LinkedHashMap<>();
+    context.report().findings().forEach(finding -> {
+      bySeverity.merge(finding.severity().name(), 1L, Long::sum);
+      byCategory.merge(finding.category().name(), 1L, Long::sum);
+      byReliability.merge(finding.reliability().name(), 1L, Long::sum);
+    });
+    return Map.of(
+        "total", context.report().findings().size(),
+        "bySeverity", bySeverity,
+        "byCategory", byCategory,
+        "byReliability", byReliability);
   }
 }
