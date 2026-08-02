@@ -14,7 +14,8 @@ public record Finding(
     List<String> artifactIds,
     List<TimelineEvent> evidence,
     List<Remediation> remediations,
-    Map<String, Object> rawData
+    Map<String, Object> rawData,
+    FindingReliability reliability
 ) {
   public Finding {
     id = requireText(id, "id");
@@ -29,6 +30,47 @@ public record Finding(
     evidence = evidence == null ? List.of() : List.copyOf(evidence);
     remediations = remediations == null ? List.of() : List.copyOf(remediations);
     rawData = rawData == null ? Map.of() : Map.copyOf(rawData);
+    reliability = reliability == null ? FindingReliability.DERIVED : reliability;
+  }
+
+  public Finding(
+      String id,
+      FindingSeverity severity,
+      FindingCategory category,
+      String title,
+      String explanation,
+      double confidence,
+      List<String> artifactIds,
+      List<TimelineEvent> evidence,
+      List<Remediation> remediations,
+      Map<String, Object> rawData) {
+    this(
+        id,
+        severity,
+        category,
+        title,
+        explanation,
+        confidence,
+        artifactIds,
+        evidence,
+        remediations,
+        rawData,
+        FindingReliability.DERIVED);
+  }
+
+  public Finding withReliability(FindingReliability value) {
+    return new Finding(
+        id,
+        severity,
+        category,
+        title,
+        explanation,
+        confidence,
+        artifactIds,
+        evidence,
+        remediations,
+        rawData,
+        value);
   }
 
   private static String requireText(String value, String fieldName) {
