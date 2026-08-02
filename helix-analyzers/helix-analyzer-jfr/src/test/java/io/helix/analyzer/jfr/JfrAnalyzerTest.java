@@ -43,12 +43,58 @@ class JfrAnalyzerTest {
         .satisfies(finding -> assertThat(finding.severity()).isEqualTo(FindingSeverity.HIGH));
   }
 
+  @Test
+  void doesNotTreatIntentionalMonitorWaitAsContention() {
+    JfrEvent monitorWait = event(
+        "jdk.JavaMonitorWait",
+        Instant.parse("2026-01-01T00:00:00Z"),
+        Duration.ofMinutes(1),
+        0,
+        "java.lang.ref.ReferenceQueue$Lock",
+        "",
+        "java.lang.ref.ReferenceQueue$Lock",
+        "");
+
+    List<Finding> findings = new JfrAnalyzer().analyze(
+        parsedArtifact(new JfrRecordingData(List.of(monitorWait), Map.of())),
+        AnalysisContext.defaults());
+
+    assertThat(findings)
+        .extracting(Finding::title)
+        .doesNotContain("JFR lock contention profile");
+  }
+
+  @Test
+  void labelsSampledAllocationWeightAsEstimated() {
+    JfrEvent sample = event(
+        "jdk.ObjectAllocationSample",
+        Instant.parse("2026-01-01T00:00:00Z"),
+        Duration.ZERO,
+        200L * 1024L * 1024L,
+        "byte[]",
+        "",
+        "",
+        "");
+
+    List<Finding> findings = new JfrAnalyzer().analyze(
+        parsedArtifact(new JfrRecordingData(List.of(sample), Map.of())),
+        AnalysisContext.defaults());
+
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("JFR allocation hotspots"))
+        .singleElement()
+        .satisfies(finding -> {
+          assertThat(finding.explanation()).contains("estimated allocation weight");
+          assertThat(finding.rawData()).containsEntry("measurement", "SAMPLED_WEIGHT");
+        });
+  }
+
   private static List<JfrEvent> events() {
     Instant base = Instant.parse("2026-01-01T00:00:00Z");
     List<JfrEvent> events = new ArrayList<>();
     events.add(event("jdk.ExecutionSample", base, Duration.ZERO, 0, "", "com.example.Cpu.hot", "", ""));
     events.add(event("jdk.ObjectAllocationOutsideTLAB", base.plusMillis(10), Duration.ZERO, 256L * 1024L * 1024L, "byte[]", "", "", ""));
-    events.add(event("jdk.MonitorEnter", base.plusMillis(20), Duration.ofMillis(1200), 0, "java.lang.Object", "", "java.lang.Object", ""));
+    events.add(event("jdk.JavaMonitorEnter", base.plusMillis(20), Duration.ofMillis(1200), 0, "java.lang.Object", "", "java.lang.Object", ""));
     events.add(event("jdk.FileRead", base.plusMillis(30), Duration.ofMillis(250), 4096, "", "", "", "/tmp/slow.data"));
     for (int i = 0; i < 4; i++) {
       events.add(event("jdk.Deoptimization", base.plusMillis(40 + i), Duration.ZERO, 0, "", "com.example.Hot.method", "", ""));
