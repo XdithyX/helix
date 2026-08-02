@@ -11,6 +11,8 @@ public final class DefaultDiagnosticTools {
         new ListArtifactsTool(),
         new SearchFindingsTool(),
         new QueryThreadsTool(),
-        new QueryJfrTool()));
+        new QueryJfrTool(),
+        new QueryGcTool(),
+        new QueryHeapTool()));
   }
 }
