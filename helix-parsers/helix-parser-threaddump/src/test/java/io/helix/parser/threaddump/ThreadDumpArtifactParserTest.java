@@ -88,6 +88,41 @@ class ThreadDumpArtifactParserTest {
     assertThat(parsed.warnings()).isNotEmpty();
   }
 
+  @Test
+  void ignoresHotSpotDeadlockSummaryCopies() throws Exception {
+    Path dump = tempDir.resolve("deadlock-with-summary.txt");
+    Files.writeString(dump, """
+        Full thread dump OpenJDK 64-Bit Server VM:
+
+        "Deadlock-1" #11 waiting for monitor entry
+           java.lang.Thread.State: BLOCKED (on object monitor)
+                at com.example.Deadlock.first(Deadlock.java:21)
+                - waiting to lock <0x1> (a java.lang.Object)
+                - locked <0x2> (a java.lang.Object)
+
+        "Deadlock-2" #12 waiting for monitor entry
+           java.lang.Thread.State: BLOCKED (on object monitor)
+                at com.example.Deadlock.second(Deadlock.java:31)
+                - waiting to lock <0x2> (a java.lang.Object)
+                - locked <0x1> (a java.lang.Object)
+
+        Found one Java-level deadlock:
+        =============================
+        "Deadlock-1":
+          waiting to lock monitor 0x1, which is held by "Deadlock-2"
+
+        "Deadlock-2":
+          waiting to lock monitor 0x2, which is held by "Deadlock-1"
+        """);
+
+    ParsedArtifact parsed = new ThreadDumpArtifactParser().parse(dump, ParseContext.defaults());
+    ThreadDumpData data = (ThreadDumpData) parsed.data().get(ThreadDumpArtifactParser.THREAD_DATA_KEY);
+
+    assertThat(data.snapshots().getFirst().threads())
+        .extracting("name")
+        .containsExactly("Deadlock-1", "Deadlock-2");
+  }
+
   private static ThreadDumpData parseFixture(String fileName) throws Exception {
     Path path = threadFixture(fileName);
     ParsedArtifact parsed = new ThreadDumpArtifactParser().parse(path, ParseContext.defaults());
