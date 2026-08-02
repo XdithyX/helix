@@ -3,6 +3,7 @@ package io.helix.analyzer.threads;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -93,7 +94,8 @@ public final class ThreadAnalyzer implements Analyzer {
               RemediationType.CODE_CHANGE,
               "Enforce a single lock acquisition order or replace nested synchronized blocks with timed tryLock paths.",
               "Each thread in the cycle owns a lock required by the next thread, so none can make progress.")),
-          mapOf("cycle", cycle.edges())));
+          mapOf("cycle", cycle.edges()))
+          .withReliability(FindingReliability.FACT));
     }
   }
 
@@ -153,7 +155,8 @@ public final class ThreadAnalyzer implements Analyzer {
             RemediationType.CODE_CHANGE,
             "",
             "A high BLOCKED count points to lock contention; a high RUNNABLE count may point to CPU pressure.")),
-        mapOf("states", distribution)));
+        mapOf("states", distribution))
+        .withReliability(FindingReliability.FACT));
   }
 
   private static void addStackDeduplicationFinding(
@@ -210,7 +213,8 @@ public final class ThreadAnalyzer implements Analyzer {
             RemediationType.CODE_CHANGE,
             "Pair this thread dump with JFR or async-profiler to confirm sustained CPU consumption.",
             "Thread dump CPU counters are a useful hint but not a full profile.")),
-        mapOf("threads", hotThreads.stream().map(ThreadAnalyzer::threadSummary).toList())));
+        mapOf("threads", hotThreads.stream().map(ThreadAnalyzer::threadSummary).toList()))
+        .withReliability(FindingReliability.HEURISTIC));
   }
 
   private static void addThreadPoolExhaustionFindings(
@@ -252,7 +256,8 @@ public final class ThreadAnalyzer implements Analyzer {
               "pool", entry.getKey(),
               "activeThreads", active,
               "totalThreads", threads.size(),
-              "threads", threads.stream().map(ThreadSample::name).toList())));
+              "threads", threads.stream().map(ThreadSample::name).toList()))
+          .withReliability(FindingReliability.HEURISTIC));
     }
   }
 
