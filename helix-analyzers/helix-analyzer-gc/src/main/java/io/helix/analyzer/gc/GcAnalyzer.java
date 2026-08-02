@@ -3,6 +3,7 @@ package io.helix.analyzer.gc;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -194,7 +195,8 @@ public final class GcAnalyzer implements Analyzer {
             RemediationType.JVM_FLAG,
             "-XX:+DisableExplicitGC",
             "The spec requires explicit System.gc() calls to be treated as high severity because they bypass normal collector pacing.")),
-        mapOf("events", systemGc.stream().map(GcAnalyzer::eventSummary).toList())));
+        mapOf("events", systemGc.stream().map(GcAnalyzer::eventSummary).toList()))
+        .withReliability(FindingReliability.FACT));
   }
 
   private static void addLeakGradientFinding(
@@ -221,7 +223,8 @@ public final class GcAnalyzer implements Analyzer {
             RemediationType.CODE_CHANGE,
             "Use `helix analyze --type heap` on a heap dump from the same JVM window.",
             "A rising post-GC floor means live data is accumulating between collections.")),
-        mapOf("leakGradient", gradient)));
+        mapOf("leakGradient", gradient))
+        .withReliability(FindingReliability.HEURISTIC));
   }
 
   private static void addCausePatternFindings(
