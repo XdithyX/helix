@@ -53,4 +53,22 @@ class HelixMainTest {
           .contains("\"findings\" : [ ]");
     }
   }
+
+  @Test
+  void questionModeRejectsExplicitNoLlm() throws Exception {
+    Path artifact = tempDir.resolve("threads.txt");
+    Files.writeString(artifact, "thread dump");
+    StringWriter err = new StringWriter();
+    CommandLine commandLine = new CommandLine(new HelixMain());
+    commandLine.setErr(new PrintWriter(err));
+
+    int exitCode = commandLine.execute(
+        "--no-llm",
+        "analyze",
+        "--question", "Why is the JVM unresponsive?",
+        artifact.toString());
+
+    assertThat(exitCode).isEqualTo(2);
+    assertThat(err.toString()).contains("--question requires an available LLM");
+  }
 }
