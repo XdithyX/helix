@@ -11,6 +11,16 @@ import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.JvmProfile;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.StackFrame;
+import io.helix.core.model.gc.GcCollector;
+import io.helix.core.model.gc.GcEvent;
+import io.helix.core.model.gc.GcLogData;
+import io.helix.core.model.gc.GcLogFormat;
+import io.helix.core.model.heap.ByteArrayLeakSuspect;
+import io.helix.core.model.heap.DuplicateStringSummary;
+import io.helix.core.model.heap.FinalizerQueueSummary;
+import io.helix.core.model.heap.HeapDominatorEntry;
+import io.helix.core.model.heap.HeapLeakSuspect;
+import io.helix.core.model.heap.HeapSnapshotData;
 import io.helix.core.model.jfr.JfrEvent;
 import io.helix.core.model.jfr.JfrFrame;
 import io.helix.core.model.jfr.JfrRecordingData;
@@ -72,6 +82,90 @@ class DiagnosticToolsTest {
         .contains("com.example.Service.allocate")
         .contains("bytes=3072")
         .contains("count=2");
+  }
+
+  @Test
+  void summarizesGcExhaustionSignals() {
+    GcEvent fullGc = new GcEvent(
+        "gc-13",
+        CAPTURED_AT,
+        Duration.ofMillis(750),
+        Duration.ofMillis(11),
+        "Pause Full",
+        GcCollector.G1,
+        "G1 Humongous Allocation",
+        true,
+        false,
+        false,
+        true,
+        58.0,
+        58.0,
+        64.0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        Map.of());
+    GcLogData data = new GcLogData(List.of(fullGc), GcLogFormat.UNIFIED, Map.of());
+
+    var result = new QueryGcTool().execute(
+        new QueryGcTool.Input("SUMMARY", "", "", "", "G1", "ANY", 0, 20),
+        context(parsed(ArtifactType.GC_LOG, "gc", data)));
+
+    assertThat(result.data())
+        .containsEntry("eventCount", 1)
+        .containsEntry("fullGcCount", 1L)
+        .containsEntry("humongousAllocationCount", 1L)
+        .containsEntry("latestHeapAfterMb", 58.0)
+        .containsEntry("latestHeapCommittedMb", 64.0);
+  }
+
+  @Test
+  void returnsCompactHeapRetentionEvidence() {
+    HeapSnapshotData heap = new HeapSnapshotData(
+        56_000_000,
+        75_000,
+        1_900,
+        10,
+        List.of(),
+        List.of(new HeapDominatorEntry(
+            "main Thread",
+            "java.lang.Thread",
+            "<bootstrap>",
+            1,
+            52_000_000,
+            92.8,
+            List.of("[GCRoot]", "main Thread"))),
+        List.of(new HeapLeakSuspect(
+            "java.lang.Thread",
+            "<bootstrap>",
+            52_000_000,
+            92.8,
+            List.of("[GCRoot]", "main Thread"))),
+        DuplicateStringSummary.empty(),
+        FinalizerQueueSummary.empty(),
+        List.of(new ByteArrayLeakSuspect(
+            "byte[]",
+            17_000,
+            53_000_000,
+            94.6,
+            List.of("[GCRoot]", "main Thread", "byte[]"))),
+        List.of(),
+        Map.of("mat.internal", "must not be returned"));
+
+    var result = new QueryHeapTool().execute(
+        new QueryHeapTool.Input("BYTE_ARRAYS", "", 10),
+        context(parsed(ArtifactType.HEAP_DUMP, "heap", heap)));
+
+    assertThat(result.data().toString())
+        .contains("totalBytes=53000000")
+        .contains("heapPercent=94.6")
+        .contains("main Thread")
+        .doesNotContain("mat.internal");
   }
 
   private static ThreadSample thread(
