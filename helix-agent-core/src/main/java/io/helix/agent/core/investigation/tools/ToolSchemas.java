@@ -27,6 +27,13 @@ final class ToolSchemas {
         "maximum", maximum);
   }
 
+  static Map<String, Object> number(String description, double minimum) {
+    return Map.of(
+        "type", "number",
+        "description", description,
+        "minimum", minimum);
+  }
+
   static Map<String, Object> enumeration(String description, String... values) {
     return Map.of(
         "type", "string",
