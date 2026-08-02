@@ -1,18 +1,22 @@
 package io.helix.agent.core.investigation;
 
 import io.helix.agent.core.AgentJson;
+import io.helix.core.model.ArtifactType;
 import io.helix.core.model.InvestigationResult;
 import io.helix.core.model.InvestigationStatus;
 import io.helix.core.model.ToolTrace;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public final class InvestigationOrchestrator {
   public static final String CONCLUDE_TOOL = "conclude_investigation";
   public static final String INSUFFICIENT_TOOL = "report_insufficient_evidence";
-  private static final int DEFAULT_MAX_STEPS = 6;
+  private static final int DEFAULT_MAX_STEPS = 8;
 
   private final DiagnosticToolRegistry registry;
   private final int maxSteps;
@@ -42,11 +46,22 @@ public final class InvestigationOrchestrator {
 
     List<ToolTrace> traces = new ArrayList<>();
     List<ToolExecution> previousExecutions = List.of();
+    List<String> requiredEvidenceTools = requiredEvidenceTools(context);
+    Set<String> successfulTools = new HashSet<>();
     try {
       InvestigationSession session = model.openSession(request(context));
       for (int step = 0; step < maxSteps; step++) {
         InvestigationTurn turn = session.next(previousExecutions);
         if (turn.toolCalls().isEmpty()) {
+          List<String> missing = missingEvidenceTools(requiredEvidenceTools, successfulTools);
+          if (!turn.text().isBlank() && !missing.isEmpty()) {
+            return new InvestigationResult(
+                context.question(),
+                InvestigationStatus.INSUFFICIENT_EVIDENCE,
+                "The model attempted to conclude before examining required evidence: "
+                    + String.join(", ", missing) + ".",
+                traces);
+          }
           InvestigationStatus status = turn.text().isBlank()
               ? InvestigationStatus.INSUFFICIENT_EVIDENCE
               : InvestigationStatus.CONCLUDED;
@@ -62,6 +77,15 @@ public final class InvestigationOrchestrator {
         if (diagnosticCalls.isEmpty()) {
           ToolCall control = turn.toolCalls().getFirst();
           if (CONCLUDE_TOOL.equals(control.name())) {
+            List<String> missing = missingEvidenceTools(requiredEvidenceTools, successfulTools);
+            if (!missing.isEmpty()) {
+              previousExecutions = List.of(new ToolExecution(
+                  control,
+                  ToolResult.invalid(
+                      "Conclusion rejected. Examine the required evidence with: "
+                          + String.join(", ", missing) + ".")));
+              continue;
+            }
             return new InvestigationResult(
                 context.question(),
                 InvestigationStatus.CONCLUDED,
@@ -79,6 +103,9 @@ public final class InvestigationOrchestrator {
         for (ToolCall call : diagnosticCalls) {
           ToolExecution execution = registry.execute(call, context);
           executions.add(execution);
+          if (execution.result().status() == ToolStatus.SUCCESS) {
+            successfulTools.add(call.name());
+          }
           traces.add(new ToolTrace(
               call.name(),
               registry.argumentsAsMap(call),
@@ -129,6 +156,9 @@ public final class InvestigationOrchestrator {
         Deterministic finding index:
         %s
 
+        Required evidence tools before a causal conclusion:
+        %s
+
         Timeline event count: %d
         """.formatted(
         context.question(),
@@ -140,6 +170,7 @@ public final class InvestigationOrchestrator {
                 "jvmFlavour", artifact.jvmFlavour().name()))
             .toList()),
         AgentJson.toJson(findingIndex(context)),
+        AgentJson.toJson(requiredEvidenceTools(context)),
         context.report().timeline().size());
     return new InvestigationRequest(systemInstruction(), initialPrompt, definitions);
   }
@@ -153,8 +184,12 @@ public final class InvestigationOrchestrator {
         FACT findings may be treated as proven only within the artifact that supports them.
         DERIVED findings are calculations; HEURISTIC findings require corroboration.
         For direct questions, use the minimum tools needed. For causal questions, test plausible
-        alternatives and timing. Never claim that one event caused another from temporal proximity
-        alone. Use conclude_investigation when the evidence supports an answer. Use
+        alternatives and timing. Complete every required evidence tool listed in the prompt before
+        concluding; the orchestrator will reject premature conclusions. For OOM investigations,
+        distinguish the allocation site, retained objects, and the collector's ability to reclaim
+        memory. A GC root such as java.lang.Thread proves reachability; it does not prove that the
+        root object is itself leaking. Never claim that one event caused another from temporal
+        proximity alone. Use conclude_investigation when the evidence supports an answer. Use
         report_insufficient_evidence when the supplied artifacts cannot answer reliably.
         Do not request arbitrary files, shell commands, production changes, or unregistered tools.
         """;
@@ -200,6 +235,50 @@ public final class InvestigationOrchestrator {
 
   private static boolean isControlCall(ToolCall call) {
     return CONCLUDE_TOOL.equals(call.name()) || INSUFFICIENT_TOOL.equals(call.name());
+  }
+
+  private static List<String> requiredEvidenceTools(InvestigationContext context) {
+    if (!isCausalMemoryQuestion(context.question())) {
+      return List.of();
+    }
+    List<String> required = new ArrayList<>();
+    if (hasNormalizedArtifact(context, ArtifactType.HEAP_DUMP)) {
+      required.add("query_heap");
+    }
+    if (hasNormalizedArtifact(context, ArtifactType.JFR)) {
+      required.add("query_jfr");
+    }
+    if (hasNormalizedArtifact(context, ArtifactType.GC_LOG)) {
+      required.add("query_gc");
+    }
+    return List.copyOf(required);
+  }
+
+  private static boolean hasNormalizedArtifact(
+      InvestigationContext context,
+      ArtifactType type) {
+    return context.parsedArtifacts().stream()
+        .anyMatch(parsed -> parsed.artifact().type() == type && !parsed.data().isEmpty());
+  }
+
+  private static boolean isCausalMemoryQuestion(String question) {
+    String normalized = question.toLowerCase(Locale.ROOT);
+    boolean causal = normalized.contains("why")
+        || normalized.contains("cause")
+        || normalized.contains("reason")
+        || normalized.contains("root cause");
+    boolean memory = normalized.contains("out of memory")
+        || normalized.contains("out-of-memory")
+        || normalized.contains("oom")
+        || normalized.contains("heap exhaustion")
+        || normalized.contains("memory leak");
+    return causal && memory;
+  }
+
+  private static List<String> missingEvidenceTools(
+      List<String> required,
+      Set<String> successful) {
+    return required.stream().filter(tool -> !successful.contains(tool)).toList();
   }
 
   private static Map<String, Object> findingIndex(InvestigationContext context) {
