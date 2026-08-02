@@ -41,7 +41,9 @@ class JfrArtifactParserTest {
         .contains(
             "jdk.ExecutionSample",
             "jdk.ObjectAllocationOutsideTLAB",
-            "jdk.MonitorEnter",
+            "jdk.ObjectAllocationSample",
+            "jdk.JavaMonitorEnter",
+            "jdk.JavaMonitorWait",
             "jdk.FileRead",
             "jdk.Deoptimization",
             "jdk.VirtualThreadPinned");
@@ -51,6 +53,9 @@ class JfrArtifactParserTest {
           assertThat(event.bytes()).isEqualTo(64L * 1024L * 1024L);
           assertThat(event.className()).contains("byte");
         });
+    assertThat(data.events())
+        .filteredOn(event -> event.eventType().equals("jdk.ObjectAllocationSample"))
+        .anySatisfy(event -> assertThat(event.bytes()).isEqualTo(32L * 1024L * 1024L));
     assertThat(parsed.timelineEvents())
         .extracting("type")
         .contains(
@@ -60,13 +65,22 @@ class JfrArtifactParserTest {
             TimelineEventType.BLOCKING_IO,
             TimelineEventType.DEOPT,
             TimelineEventType.VIRTUAL_THREAD_PINNED);
+    assertThat(parsed.timelineEvents())
+        .filteredOn(event -> event.type() == TimelineEventType.THREAD_BLOCKED)
+        .allSatisfy(event -> assertThat(event.attributes())
+            .containsEntry("jfr.event", "jdk.JavaMonitorEnter"));
+    assertThat(parsed.timelineEvents())
+        .filteredOn(event -> "jdk.JavaMonitorWait".equals(event.attributes().get("jfr.event")))
+        .isEmpty();
   }
 
   private static void writeRecording(Path path) throws Exception {
     try (Recording recording = new Recording()) {
       recording.enable("jdk.ExecutionSample").withStackTrace();
       recording.enable("jdk.ObjectAllocationOutsideTLAB").withStackTrace();
-      recording.enable("jdk.MonitorEnter").withStackTrace();
+      recording.enable("jdk.ObjectAllocationSample").withStackTrace();
+      recording.enable("jdk.JavaMonitorEnter").withStackTrace();
+      recording.enable("jdk.JavaMonitorWait").withStackTrace();
       recording.enable("jdk.FileRead").withStackTrace();
       recording.enable("jdk.Deoptimization").withStackTrace();
       recording.enable("jdk.VirtualThreadPinned").withStackTrace();
@@ -76,11 +90,20 @@ class JfrArtifactParserTest {
       allocation.allocationSize = 64L * 1024L * 1024L;
       allocation.objectClass = "byte[]";
       allocation.commit();
+      AllocationSampleEvent allocationSample = new AllocationSampleEvent();
+      allocationSample.weight = 32L * 1024L * 1024L;
+      allocationSample.objectClass = "java.lang.String";
+      allocationSample.commit();
       MonitorEvent monitor = new MonitorEvent();
       monitor.monitorClass = "java.lang.Object";
       monitor.begin();
       Thread.sleep(5);
       monitor.commit();
+      MonitorWaitEvent monitorWait = new MonitorWaitEvent();
+      monitorWait.monitorClass = "java.lang.ref.ReferenceQueue$Lock";
+      monitorWait.begin();
+      Thread.sleep(5);
+      monitorWait.commit();
       FileReadEvent fileRead = new FileReadEvent();
       fileRead.path = "/tmp/slow.data";
       fileRead.bytesRead = 4096;
@@ -111,9 +134,22 @@ class JfrArtifactParserTest {
     String objectClass;
   }
 
-  @Name("jdk.MonitorEnter")
+  @Name("jdk.ObjectAllocationSample")
+  @StackTrace(true)
+  static class AllocationSampleEvent extends Event {
+    long weight;
+    String objectClass;
+  }
+
+  @Name("jdk.JavaMonitorEnter")
   @StackTrace(true)
   static class MonitorEvent extends Event {
+    String monitorClass;
+  }
+
+  @Name("jdk.JavaMonitorWait")
+  @StackTrace(true)
+  static class MonitorWaitEvent extends Event {
     String monitorClass;
   }
 
