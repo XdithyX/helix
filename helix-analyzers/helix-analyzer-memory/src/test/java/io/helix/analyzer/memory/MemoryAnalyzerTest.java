@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.ParsedArtifact;
@@ -46,6 +47,7 @@ class MemoryAnalyzerTest {
         .singleElement()
         .satisfies(finding -> {
           assertThat(finding.severity()).isEqualTo(FindingSeverity.HIGH);
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.HEURISTIC);
           assertThat(finding.explanation())
               .contains("ClassName com.example.LeakyCache")
               .contains("ClassLoader org.example.WebAppClassLoader")
