@@ -5,6 +5,7 @@ import io.helix.core.model.CorrelatedEvent;
 import io.helix.core.model.CorrelationSummary;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -240,20 +241,26 @@ public final class RuleBasedCorrelator implements Correlator {
       List<TimelineEvent> timeline,
       List<Finding> findings,
       List<CorrelatedEvent> correlated) {
-    for (TimelineEvent humongous : events(timeline, TimelineEventType.HUMONGOUS_ALLOCATION)) {
-      String explanation = "Humongous allocation pressure indicates possible G1 region size or large-object allocation issues.";
-      correlated.add(new CorrelatedEvent("HumongousAllocation_RegionSizing_Correlation", humongous, humongous, 0.70, explanation));
-      findings.add(finding(
-          "correlation-humongous-region-" + findings.size(),
-          FindingSeverity.MEDIUM,
-          FindingCategory.GC,
-          "Humongous allocation suggests region sizing review",
-          explanation,
-          List.of(humongous),
-          "Confirm object sizes before changing -XX:G1HeapRegionSize.",
-          RemediationType.JVM_FLAG,
-          mapOf("rule", "HumongousAllocation_RegionSizing_Correlation")));
+    List<TimelineEvent> humongous = events(timeline, TimelineEventType.HUMONGOUS_ALLOCATION);
+    if (humongous.isEmpty()) {
+      return;
     }
+    TimelineEvent first = humongous.getFirst();
+    TimelineEvent last = humongous.getLast();
+    String explanation = humongous.size()
+        + " humongous allocation event(s) indicate possible G1 region size or large-object allocation issues.";
+    correlated.add(new CorrelatedEvent(
+        "HumongousAllocation_RegionSizing_Correlation", first, last, 0.70, explanation));
+    findings.add(finding(
+        "correlation-humongous-region-" + findings.size(),
+        FindingSeverity.MEDIUM,
+        FindingCategory.GC,
+        "Humongous allocation suggests region sizing review",
+        explanation,
+        List.of(first, last),
+        "Confirm object sizes before changing -XX:G1HeapRegionSize.",
+        RemediationType.JVM_FLAG,
+        mapOf("rule", "HumongousAllocation_RegionSizing_Correlation", "count", humongous.size())));
   }
 
   private static void applyVirtualThreadPinningBlockingIo(
@@ -358,7 +365,8 @@ public final class RuleBasedCorrelator implements Correlator {
         evidence.stream().map(TimelineEvent::artifactId).distinct().toList(),
         evidence,
         List.of(new Remediation(remediation, remediationType, "", explanation)),
-        rawData);
+        rawData)
+        .withReliability(FindingReliability.HEURISTIC);
   }
 
   private static String attr(TimelineEvent event, String... names) {
