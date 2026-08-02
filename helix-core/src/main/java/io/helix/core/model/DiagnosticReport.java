@@ -12,7 +12,8 @@ public record DiagnosticReport(
     List<TimelineEvent> timeline,
     CorrelationSummary correlationSummary,
     JvmProfile jvmProfile,
-    String llmNarrative
+    String llmNarrative,
+    InvestigationResult investigation
 ) {
   public DiagnosticReport {
     if (reportId == null || reportId.isBlank()) {
@@ -25,5 +26,39 @@ public record DiagnosticReport(
     correlationSummary =
         correlationSummary == null ? CorrelationSummary.empty() : correlationSummary;
     jvmProfile = jvmProfile == null ? JvmProfile.unknown() : jvmProfile;
+  }
+
+  public DiagnosticReport(
+      String reportId,
+      Instant generatedAt,
+      List<Artifact> artifacts,
+      List<Finding> findings,
+      List<TimelineEvent> timeline,
+      CorrelationSummary correlationSummary,
+      JvmProfile jvmProfile,
+      String llmNarrative) {
+    this(
+        reportId,
+        generatedAt,
+        artifacts,
+        findings,
+        timeline,
+        correlationSummary,
+        jvmProfile,
+        llmNarrative,
+        null);
+  }
+
+  public DiagnosticReport withInvestigation(InvestigationResult result) {
+    return new DiagnosticReport(
+        reportId,
+        generatedAt,
+        artifacts,
+        findings,
+        timeline,
+        correlationSummary,
+        jvmProfile,
+        llmNarrative,
+        result);
   }
 }
