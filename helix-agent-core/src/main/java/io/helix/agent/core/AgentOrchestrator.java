@@ -48,7 +48,8 @@ public final class AgentOrchestrator {
         report.timeline(),
         correlationSummary,
         report.jvmProfile(),
-        llmNarrative);
+        llmNarrative,
+        report.investigation());
   }
 
   private List<AgentResult> runDomainAgents(DiagnosticReport report, AgentContext context) {
