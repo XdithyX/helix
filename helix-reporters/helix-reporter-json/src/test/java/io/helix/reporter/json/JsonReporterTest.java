@@ -6,6 +6,10 @@ import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.CorrelationSummary;
 import io.helix.core.model.DiagnosticReport;
+import io.helix.core.model.Finding;
+import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
+import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.JvmProfile;
 import io.helix.core.spi.ReportOptions;
@@ -31,7 +35,21 @@ class JsonReporterTest {
     assertThat(json).contains("\"sourcePath\" : \"/tmp/heap.hprof\"");
   }
 
+  @Test
+  void rendersFindingReliability() throws Exception {
+    DiagnosticReport report = reportFixture(finding());
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+    new JsonReporter().render(report, out, ReportOptions.forFormat("json"));
+
+    assertThat(out.toString(StandardCharsets.UTF_8)).contains("\"reliability\" : \"HEURISTIC\"");
+  }
+
   private static DiagnosticReport reportFixture() {
+    return reportFixture(null);
+  }
+
+  private static DiagnosticReport reportFixture(Finding finding) {
     Artifact artifact = new Artifact(
         "artifact-1",
         ArtifactType.HEAP_DUMP,
@@ -43,10 +61,25 @@ class JsonReporterTest {
         "report-1",
         Instant.parse("2026-01-01T00:00:01Z"),
         List.of(artifact),
-        List.of(),
+        finding == null ? List.of() : List.of(finding),
         List.of(),
         CorrelationSummary.empty(),
         JvmProfile.unknown(),
         null);
+  }
+
+  private static Finding finding() {
+    return new Finding(
+        "finding-1",
+        FindingSeverity.MEDIUM,
+        FindingCategory.MEMORY,
+        "Retention suspect",
+        "A large object graph is retained.",
+        0.75,
+        List.of("artifact-1"),
+        List.of(),
+        List.of(),
+        Map.of(),
+        FindingReliability.HEURISTIC);
   }
 }
