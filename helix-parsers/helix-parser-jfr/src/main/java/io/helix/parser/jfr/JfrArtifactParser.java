@@ -44,7 +44,8 @@ public final class JfrArtifactParser implements ArtifactParser {
       "jdk.ExecutionSample",
       "jdk.ObjectAllocationInNewTLAB",
       "jdk.ObjectAllocationOutsideTLAB",
-      "jdk.MonitorEnter",
+      "jdk.ObjectAllocationSample",
+      "jdk.JavaMonitorEnter",
       "jdk.JavaMonitorWait",
       "jdk.FileRead",
       "jdk.FileWrite",
@@ -180,8 +181,9 @@ public final class JfrArtifactParser implements ArtifactParser {
     return switch (eventType) {
       case "jdk.GCPauseL1", "jdk.G1GarbageCollection" -> TimelineEventType.GC_PAUSE;
       case "jdk.ExecutionSample" -> TimelineEventType.CPU_SPIKE;
-      case "jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB" -> TimelineEventType.ALLOCATION_PRESSURE;
-      case "jdk.MonitorEnter", "jdk.JavaMonitorWait" -> TimelineEventType.THREAD_BLOCKED;
+      case "jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB", "jdk.ObjectAllocationSample" ->
+          TimelineEventType.ALLOCATION_PRESSURE;
+      case "jdk.JavaMonitorEnter" -> TimelineEventType.THREAD_BLOCKED;
       case "jdk.FileRead", "jdk.FileWrite", "jdk.SocketRead", "jdk.SocketWrite" -> TimelineEventType.BLOCKING_IO;
       case "jdk.Deoptimization" -> TimelineEventType.DEOPT;
       case "jdk.VirtualThreadPinned" -> TimelineEventType.VIRTUAL_THREAD_PINNED;
@@ -219,7 +221,7 @@ public final class JfrArtifactParser implements ArtifactParser {
   }
 
   private static long bytes(RecordedEvent event) {
-    return firstNumber(event, "allocationSize", "tlabSize", "bytesRead", "bytesWritten", "bytes")
+    return firstNumber(event, "allocationSize", "tlabSize", "weight", "bytesRead", "bytesWritten", "bytes")
         .map(Number::longValue)
         .orElse(0L);
   }
@@ -250,9 +252,11 @@ public final class JfrArtifactParser implements ArtifactParser {
   }
 
   private static String lockName(RecordedEvent event) {
-    return firstValue(event, "monitorClass", "address", "notifier")
-        .map(Object::toString)
-        .orElse("");
+    Optional<Object> value = firstValue(event, "monitorClass", "address", "notifier");
+    if (value.isPresent() && value.get() instanceof RecordedClass recordedClass) {
+      return recordedClass.getName();
+    }
+    return value.map(Object::toString).orElse("");
   }
 
   private static String ioTarget(RecordedEvent event) {
