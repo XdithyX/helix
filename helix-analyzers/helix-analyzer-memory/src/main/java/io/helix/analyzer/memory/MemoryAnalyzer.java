@@ -3,6 +3,7 @@ package io.helix.analyzer.memory;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -92,7 +93,8 @@ public final class MemoryAnalyzer implements Analyzer {
               "retainedBytes", suspect.retainedBytes(),
               "heapPercent", suspect.heapPercent(),
               "classLoader", suspect.classLoaderName(),
-              "retentionPath", suspect.retentionPath())));
+              "retentionPath", suspect.retentionPath()))
+          .withReliability(FindingReliability.HEURISTIC));
     }
   }
 
@@ -218,7 +220,8 @@ public final class MemoryAnalyzer implements Analyzer {
               "classLoader", suspect.classLoaderName(),
               "retainedBytes", suspect.retainedBytes(),
               "heapPercent", suspect.heapPercent(),
-              "retainedClasses", suspect.retainedClasses())));
+              "retainedClasses", suspect.retainedClasses()))
+          .withReliability(FindingReliability.HEURISTIC));
     }
   }
 
@@ -280,7 +283,8 @@ public final class MemoryAnalyzer implements Analyzer {
               "arrayCount", suspect.arrayCount(),
               "totalBytes", suspect.totalBytes(),
               "heapPercent", suspect.heapPercent(),
-              "retentionPath", suspect.retentionPath())));
+              "retentionPath", suspect.retentionPath()))
+          .withReliability(FindingReliability.HEURISTIC));
     }
   }
 
