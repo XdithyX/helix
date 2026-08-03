@@ -33,7 +33,6 @@ class GcAnalyzerTest {
         .contains(
             "GC pause statistics",
             "GC p99 pause exceeds threshold",
-            "GC throughput below target",
             "GC cause breakdown",
             "Explicit System.gc() detected",
             "Humongous allocation GC pattern",
@@ -49,7 +48,25 @@ class GcAnalyzerTest {
         });
     assertThat(findings)
         .extracting(Finding::title)
-        .doesNotContain("Heap-after-GC leak gradient");
+        .doesNotContain("Heap-after-GC leak gradient", "GC throughput below target");
+  }
+
+  @Test
+  void calculatesThroughputOnlyAcrossARepresentativeWindow() {
+    Instant base = Instant.parse("2026-01-01T00:00:00Z");
+    List<GcEvent> events = List.of(
+        event("gc-0", base, 0, 30_000, "G1 Evacuation Pause", false, false, 500, 300, 200, 250, 200),
+        event("gc-1", base.plusSeconds(600), 600, 30_000, "G1 Evacuation Pause", false, false, 500, 300, 200, 250, 200));
+
+    List<Finding> findings = new GcAnalyzer().analyze(
+        parsedArtifact(new GcLogData(events, GcLogFormat.UNIFIED, Map.of())),
+        new AnalysisContext(null, Map.of("gc.throughputWarningPercent", 95.0)));
+
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("GC throughput below target"))
+        .singleElement()
+        .satisfies(finding -> assertThat(finding.rawData().toString())
+            .contains("windowMillis=600000.0"));
   }
 
   @Test
@@ -72,6 +89,26 @@ class GcAnalyzerTest {
         .satisfies(finding -> {
           assertThat(finding.reliability()).isEqualTo(FindingReliability.HEURISTIC);
           assertThat(finding.rawData().toString()).contains("windowMillis=600000.0");
+        });
+  }
+
+  @Test
+  void reportsWhenRepeatedFullGcsReclaimAlmostNothing() {
+    Instant base = Instant.parse("2026-01-01T00:00:00Z");
+    List<GcEvent> events = List.of(
+        event("gc-12", base, 0, 7, "G1 Compaction Pause", true, false, 58, 58, 58, 58, 0),
+        event("gc-13", base.plusMillis(10), 0, 11, "G1 Compaction Pause", true, false, 58, 58, 58, 58, 0));
+
+    List<Finding> findings = new GcAnalyzer().analyze(
+        parsedArtifact(new GcLogData(events, GcLogFormat.UNIFIED, Map.of())),
+        AnalysisContext.defaults());
+
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("Repeated Full GCs failed to reclaim heap"))
+        .singleElement()
+        .satisfies(finding -> {
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.DERIVED);
+          assertThat(finding.explanation()).contains("reclaimed 0.00 MB in total");
         });
   }
 

@@ -28,6 +28,7 @@ public final class GcAnalyzer implements Analyzer {
   private static final double DEFAULT_THROUGHPUT_WARNING_PERCENT = 95.0;
   private static final int MIN_LEAK_GRADIENT_SAMPLES = 5;
   private static final Duration MIN_LEAK_GRADIENT_WINDOW = Duration.ofMinutes(5);
+  private static final Duration MIN_THROUGHPUT_WINDOW = Duration.ofMinutes(5);
   private static final double HIGH_ALLOCATION_RATE_MB_PER_SEC = 512.0;
   private static final double HIGH_PROMOTION_RATE_MB_PER_SEC = 50.0;
 
@@ -48,6 +49,7 @@ public final class GcAnalyzer implements Analyzer {
     addPauseStatisticsFindings(artifact, events, pauseWarningMs, findings);
     addThroughputFinding(artifact, events, throughputWarningPercent, findings);
     addCauseBreakdownFinding(artifact, events, findings);
+    addIneffectiveFullGcFinding(artifact, events, findings);
     addSystemGcFinding(artifact, events, findings);
     addLeakGradientFinding(artifact, events, findings);
     addCausePatternFindings(artifact, events, findings);
@@ -345,7 +347,7 @@ public final class GcAnalyzer implements Analyzer {
       return null;
     }
     double windowMs = elapsedMillis(events.getFirst(), events.getLast());
-    if (windowMs <= 0.0) {
+    if (windowMs < MIN_THROUGHPUT_WINDOW.toMillis()) {
       return null;
     }
     double pauseMs = pauseMillis(events).stream().mapToDouble(Double::doubleValue).sum();
@@ -359,6 +361,55 @@ public final class GcAnalyzer implements Analyzer {
             event -> event.cause().isBlank() ? "Unknown" : event.cause(),
             LinkedHashMap::new,
             Collectors.counting()));
+  }
+
+  private static void addIneffectiveFullGcFinding(
+      ParsedArtifact artifact,
+      List<GcEvent> events,
+      List<Finding> findings) {
+    List<GcEvent> measuredFullGcs = events.stream()
+        .filter(GcEvent::fullGc)
+        .filter(event -> event.heapBeforeMb() != null && event.heapAfterMb() != null)
+        .toList();
+    if (measuredFullGcs.size() < 2) {
+      return;
+    }
+    List<GcEvent> lastTwo = measuredFullGcs.subList(measuredFullGcs.size() - 2, measuredFullGcs.size());
+    boolean ineffective = lastTwo.stream().allMatch(event -> {
+      double reclaimedMb = Math.max(0.0, event.heapBeforeMb() - event.heapAfterMb());
+      double baselineMb = event.heapCommittedMb() == null ? event.heapBeforeMb() : event.heapCommittedMb();
+      return reclaimedMb <= Math.max(1.0, baselineMb * 0.01);
+    });
+    if (!ineffective) {
+      return;
+    }
+    double reclaimedMb = lastTwo.stream()
+        .mapToDouble(event -> Math.max(0.0, event.heapBeforeMb() - event.heapAfterMb()))
+        .sum();
+    GcEvent latest = lastTwo.getLast();
+    findings.add(new Finding(
+        artifact.artifact().id() + "-ineffective-full-gc",
+        FindingSeverity.HIGH,
+        FindingCategory.MEMORY,
+        "Repeated Full GCs failed to reclaim heap",
+        "The final two measured Full GCs reclaimed " + format(reclaimedMb)
+            + " MB in total; the last left " + format(latest.heapAfterMb()) + " MB used out of "
+            + format(latest.heapCommittedMb() == null ? latest.heapBeforeMb() : latest.heapCommittedMb())
+            + " MB committed.",
+        0.94,
+        List.of(artifact.artifact().id()),
+        List.of(),
+        List.of(new Remediation(
+            "Use heap-retention and allocation-site evidence to identify objects that remain strongly reachable.",
+            RemediationType.CODE_CHANGE,
+            "Do not treat additional Full GCs as a durable fix.",
+            "Repeated Full GCs with negligible reclamation are direct evidence of retained live data.")),
+        mapOf(
+            "fullGcCount", measuredFullGcs.size(),
+            "lastTwoReclaimedMb", reclaimedMb,
+            "latestHeapAfterMb", latest.heapAfterMb(),
+            "latestHeapCommittedMb", latest.heapCommittedMb()))
+        .withReliability(FindingReliability.DERIVED));
   }
 
   private static LeakGradient leakGradient(List<GcEvent> events) {
