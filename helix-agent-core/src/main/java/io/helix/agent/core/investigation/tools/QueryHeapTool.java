@@ -40,7 +40,7 @@ public final class QueryHeapTool implements DiagnosticTool<QueryHeapTool.Input> 
   public ToolDefinition definition() {
     return new ToolDefinition(
         "query_heap",
-        "Query normalized heap snapshots for size summaries, histograms, dominators, leak suspects, byte arrays, classloaders, and duplicate strings.",
+        "Query normalized heap snapshots for size summaries, histograms, dominators, large retained graphs, byte arrays, classloaders, and duplicate strings.",
         ToolSchemas.object(Map.of(
             "operation", ToolSchemas.enumeration(
                 "Result shape.",
@@ -149,13 +149,14 @@ public final class QueryHeapTool implements DiagnosticTool<QueryHeapTool.Input> 
                 || contains(entry.classLoaderName(), input.classContains()))
             .sorted(Comparator.comparingLong(HeapLeakSuspect::retainedBytes).reversed())
             .map(entry -> map(
-                "className", entry.className(),
+                "retentionRootClass", entry.className(),
                 "classLoader", entry.classLoaderName(),
                 "retainedBytes", entry.retainedBytes(),
                 "heapPercent", entry.heapPercent(),
-                "retentionPath", entry.retentionPath()))
+                "retentionPath", entry.retentionPath(),
+                "interpretation", "A retention root/dominator is not necessarily the leaking component."))
             .toList(),
-        "heap leak suspects",
+        "large retained heap graphs",
         "heap:leak-suspects");
   }
 

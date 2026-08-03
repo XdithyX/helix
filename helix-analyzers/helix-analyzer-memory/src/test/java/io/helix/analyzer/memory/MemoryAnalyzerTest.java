@@ -35,7 +35,7 @@ class MemoryAnalyzerTest {
     assertThat(findings)
         .extracting(Finding::title)
         .contains(
-            "Heap leak suspect: com.example.LeakyCache",
+            "Large retained object graph: com.example.LeakyCache",
             "Top heap dominators",
             "Duplicate String instances",
             "Class histogram",
@@ -43,14 +43,15 @@ class MemoryAnalyzerTest {
             "Finalizer queue backlog",
             "Large byte[] retention");
     assertThat(findings)
-        .filteredOn(finding -> finding.title().equals("Heap leak suspect: com.example.LeakyCache"))
+        .filteredOn(finding -> finding.title().equals("Large retained object graph: com.example.LeakyCache"))
         .singleElement()
         .satisfies(finding -> {
           assertThat(finding.severity()).isEqualTo(FindingSeverity.HIGH);
-          assertThat(finding.reliability()).isEqualTo(FindingReliability.HEURISTIC);
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.DERIVED);
           assertThat(finding.explanation())
-              .contains("ClassName com.example.LeakyCache")
-              .contains("ClassLoader org.example.WebAppClassLoader")
+              .contains("com.example.LeakyCache is the reported retention root/dominator")
+              .contains("ClassLoader: org.example.WebAppClassLoader")
+              .contains("not that the root itself is leaking")
               .contains("retains 300.0 MB")
               .contains("[GCRoot] \u2192 static cache \u2192 com.example.LeakyCache");
         });

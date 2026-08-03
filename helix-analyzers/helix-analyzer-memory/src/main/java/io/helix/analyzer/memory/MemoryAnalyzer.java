@@ -78,23 +78,22 @@ public final class MemoryAnalyzer implements Analyzer {
           artifact.artifact().id() + "-memory-leak-" + index++,
           suspect.heapPercent() >= 25.0 ? FindingSeverity.HIGH : FindingSeverity.MEDIUM,
           FindingCategory.MEMORY,
-          "Heap leak suspect: " + suspect.className(),
+          "Large retained object graph: " + suspect.className(),
           leakExplanation(suspect),
           suspect.heapPercent() >= 25.0 ? 0.90 : 0.78,
           List.of(artifact.artifact().id()),
           List.of(),
           List.of(new Remediation(
-              "Inspect the retaining references and object lifecycle for " + suspect.className() + ".",
+              "Inspect the objects retained beneath " + suspect.className() + " and their ownership path.",
               RemediationType.CODE_CHANGE,
-              "Break the retention path or bound the cache/collection retaining this object graph.",
-              "The object graph retains " + formatBytes(suspect.retainedBytes())
-                  + ", which is above the configured leak threshold.")),
+              "Find the growing collection or allocation site before changing the retention root's lifecycle.",
+              "A large dominator identifies reachability and retained size; it does not by itself identify the leaking component.")),
           mapOf(
               "retainedBytes", suspect.retainedBytes(),
               "heapPercent", suspect.heapPercent(),
               "classLoader", suspect.classLoaderName(),
               "retentionPath", suspect.retentionPath()))
-          .withReliability(FindingReliability.HEURISTIC));
+          .withReliability(FindingReliability.DERIVED));
     }
   }
 
@@ -289,9 +288,10 @@ public final class MemoryAnalyzer implements Analyzer {
   }
 
   private static String leakExplanation(HeapLeakSuspect suspect) {
-    return "ClassName " + suspect.className() + ", loaded by ClassLoader "
-        + suspect.classLoaderName() + ", retains " + formatBytes(suspect.retainedBytes())
-        + " (" + formatPercent(suspect.heapPercent()) + ") of heap. The retention path is: "
+    return suspect.className() + " is the reported retention root/dominator and retains "
+        + formatBytes(suspect.retainedBytes()) + " (" + formatPercent(suspect.heapPercent())
+        + ") of heap. This establishes reachability, not that the root itself is leaking. ClassLoader: "
+        + suspect.classLoaderName() + ". Retention path: "
         + retentionPath(suspect.retentionPath(), suspect.className()) + ".";
   }
 
