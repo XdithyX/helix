@@ -103,7 +103,8 @@ public final class InvestigationOrchestrator {
         for (ToolCall call : diagnosticCalls) {
           ToolExecution execution = registry.execute(call, context);
           executions.add(execution);
-          if (execution.result().status() == ToolStatus.SUCCESS) {
+          if (execution.result().status() == ToolStatus.SUCCESS
+              && !execution.result().evidence().isEmpty()) {
             successfulTools.add(call.name());
           }
           traces.add(new ToolTrace(
@@ -188,7 +189,10 @@ public final class InvestigationOrchestrator {
         concluding; the orchestrator will reject premature conclusions. For OOM investigations,
         distinguish the allocation site, retained objects, and the collector's ability to reclaim
         memory. A GC root such as java.lang.Thread proves reachability; it does not prove that the
-        root object is itself leaking. Never claim that one event caused another from temporal
+        root object is itself leaking. Prefer direct OOM events, surviving-object samples, and
+        allocation stacks when they are present. Name the retained object and ownership or
+        allocation mechanism as the cause; do not substitute the GC-root class. Never claim that
+        one event caused another from temporal
         proximity alone. Use conclude_investigation when the evidence supports an answer. Use
         report_insufficient_evidence when the supplied artifacts cannot answer reliably.
         Do not request arbitrary files, shell commands, production changes, or unregistered tools.
