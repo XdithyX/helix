@@ -3,6 +3,7 @@ package io.helix.analyzer.jfr;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
 import io.helix.core.model.FindingCategory;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.ParsedArtifact;
 import io.helix.core.model.Remediation;
@@ -34,6 +35,8 @@ public final class JfrAnalyzer implements Analyzer {
     }
 
     List<Finding> findings = new ArrayList<>();
+    addOutOfMemoryFinding(artifact, recording.events(), findings);
+    addOldObjectRetentionFinding(artifact, recording.events(), findings);
     addFlameGraphFinding(artifact, recording.events(), findings);
     addAllocationHotspotFinding(artifact, recording.events(), findings);
     addLockContentionFinding(artifact, recording.events(), findings);
@@ -51,6 +54,89 @@ public final class JfrAnalyzer implements Analyzer {
   @Override
   public String analyzerId() {
     return "helix-analyzer-jfr";
+  }
+
+  private static void addOutOfMemoryFinding(
+      ParsedArtifact artifact,
+      List<JfrEvent> events,
+      List<Finding> findings) {
+    List<JfrEvent> oomEvents = events.stream()
+        .filter(event -> (event.eventType().equals("jdk.HeapDump")
+                && Boolean.parseBoolean(String.valueOf(
+                    event.attributes().getOrDefault("onOutOfMemoryError", false))))
+            || (event.eventType().equals("jdk.JavaErrorThrow")
+                && event.className().contains("OutOfMemoryError")))
+        .toList();
+    if (oomEvents.isEmpty()) {
+      return;
+    }
+    JfrEvent primary = oomEvents.getFirst();
+    findings.add(new Finding(
+        artifact.artifact().id() + "-jfr-out-of-memory",
+        FindingSeverity.CRITICAL,
+        FindingCategory.MEMORY,
+        "JFR recorded an OutOfMemoryError",
+        primary.eventType().equals("jdk.HeapDump")
+            ? "JFR recorded an OutOfMemoryError-triggered heap dump on thread "
+                + primary.threadName() + " at " + primary.topFrame() + "."
+            : "JFR recorded java.lang.OutOfMemoryError on thread "
+                + primary.threadName() + " at " + primary.topFrame() + ".",
+        0.98,
+        List.of(artifact.artifact().id()),
+        List.of(),
+        List.of(new Remediation(
+            "Correlate this event with retained-object samples, heap dominators, and GC reclamation.",
+            RemediationType.CODE_CHANGE,
+            "Identify the allocation and ownership path before changing heap sizing.",
+            "This event establishes that an OOM occurred; the related evidence identifies why.")),
+        mapOf("events", oomEvents.stream().map(JfrAnalyzer::eventSummary).toList()))
+        .withReliability(FindingReliability.FACT));
+  }
+
+  private static void addOldObjectRetentionFinding(
+      ParsedArtifact artifact,
+      List<JfrEvent> events,
+      List<Finding> findings) {
+    Map<String, List<JfrEvent>> groups = events.stream()
+        .filter(event -> event.eventType().equals("jdk.OldObjectSample"))
+        .filter(event -> event.bytes() >= 1024L * 1024L)
+        .collect(Collectors.groupingBy(
+            event -> event.className() + " at " + allocationFrame(event),
+            LinkedHashMap::new,
+            Collectors.toList()));
+    if (groups.isEmpty()) {
+      return;
+    }
+    Map.Entry<String, List<JfrEvent>> top = groups.entrySet().stream()
+        .max(Comparator.comparingLong(entry -> entry.getValue().stream()
+            .mapToLong(JfrEvent::bytes)
+            .sum()))
+        .orElseThrow();
+    long sampledBytes = top.getValue().stream().mapToLong(JfrEvent::bytes).sum();
+    JfrEvent representative = top.getValue().getFirst();
+    findings.add(new Finding(
+        artifact.artifact().id() + "-jfr-old-object-retention",
+        sampledBytes >= 50L * 1024L * 1024L ? FindingSeverity.HIGH : FindingSeverity.MEDIUM,
+        FindingCategory.MEMORY,
+        "Large surviving objects sampled by JFR",
+        "JFR sampled " + top.getValue().size() + " surviving " + representative.className()
+            + " objects allocated at " + allocationFrame(representative) + ", totaling "
+            + format(mb(sampledBytes)) + " MB of sampled object size.",
+        0.90,
+        List.of(artifact.artifact().id()),
+        List.of(),
+        List.of(new Remediation(
+            "Inspect the sampled allocation stack and the collection retaining these objects.",
+            RemediationType.CODE_CHANGE,
+            "Bound or release the retained objects at the ownership site.",
+            "Old-object samples connect surviving objects to the code that allocated them.")),
+        mapOf(
+            "measurement", "JFR_OLD_OBJECT_SAMPLE",
+            "sampleCount", top.getValue().size(),
+            "sampledObjectBytes", sampledBytes,
+            "classAndAllocationSite", top.getKey(),
+            "events", top.getValue().stream().map(JfrAnalyzer::eventSummary).toList()))
+        .withReliability(FindingReliability.DERIVED));
   }
 
   private static void addFlameGraphFinding(
@@ -351,7 +437,8 @@ public final class JfrAnalyzer implements Analyzer {
         "methodName", event.methodName(),
         "lockName", event.lockName(),
         "ioTarget", event.ioTarget(),
-        "reason", event.reason());
+        "reason", event.reason(),
+        "attributes", event.attributes());
   }
 
   private static double mb(long bytes) {

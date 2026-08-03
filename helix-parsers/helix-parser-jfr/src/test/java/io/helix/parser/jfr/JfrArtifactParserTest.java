@@ -42,6 +42,8 @@ class JfrArtifactParserTest {
             "jdk.ExecutionSample",
             "jdk.ObjectAllocationOutsideTLAB",
             "jdk.ObjectAllocationSample",
+            "jdk.HeapDump",
+            "jdk.OldObjectSample",
             "jdk.JavaMonitorEnter",
             "jdk.JavaMonitorWait",
             "jdk.FileRead",
@@ -56,10 +58,23 @@ class JfrArtifactParserTest {
     assertThat(data.events())
         .filteredOn(event -> event.eventType().equals("jdk.ObjectAllocationSample"))
         .anySatisfy(event -> assertThat(event.bytes()).isEqualTo(32L * 1024L * 1024L));
+    assertThat(data.events())
+        .filteredOn(event -> event.eventType().equals("jdk.HeapDump"))
+        .singleElement()
+        .satisfies(event -> assertThat(event.attributes())
+            .containsEntry("onOutOfMemoryError", true));
+    assertThat(data.events())
+        .filteredOn(event -> event.eventType().equals("jdk.OldObjectSample"))
+        .singleElement()
+        .satisfies(event -> {
+          assertThat(event.bytes()).isEqualTo(10L * 1024L * 1024L);
+          assertThat(event.className()).isEqualTo("byte[]");
+        });
     assertThat(parsed.timelineEvents())
         .extracting("type")
         .contains(
             TimelineEventType.CPU_SPIKE,
+            TimelineEventType.OOM,
             TimelineEventType.ALLOCATION_PRESSURE,
             TimelineEventType.THREAD_BLOCKED,
             TimelineEventType.BLOCKING_IO,
@@ -79,6 +94,8 @@ class JfrArtifactParserTest {
       recording.enable("jdk.ExecutionSample").withStackTrace();
       recording.enable("jdk.ObjectAllocationOutsideTLAB").withStackTrace();
       recording.enable("jdk.ObjectAllocationSample").withStackTrace();
+      recording.enable("jdk.HeapDump").withStackTrace();
+      recording.enable("jdk.OldObjectSample").withStackTrace();
       recording.enable("jdk.JavaMonitorEnter").withStackTrace();
       recording.enable("jdk.JavaMonitorWait").withStackTrace();
       recording.enable("jdk.FileRead").withStackTrace();
@@ -94,6 +111,14 @@ class JfrArtifactParserTest {
       allocationSample.weight = 32L * 1024L * 1024L;
       allocationSample.objectClass = "java.lang.String";
       allocationSample.commit();
+      HeapDumpEvent heapDump = new HeapDumpEvent();
+      heapDump.onOutOfMemoryError = true;
+      heapDump.destination = "heap_dump_fault.hprof";
+      heapDump.commit();
+      OldObjectSampleEvent oldObject = new OldObjectSampleEvent();
+      oldObject.objectSize = 10L * 1024L * 1024L;
+      oldObject.objectClass = "byte[]";
+      oldObject.commit();
       MonitorEvent monitor = new MonitorEvent();
       monitor.monitorClass = "java.lang.Object";
       monitor.begin();
@@ -138,6 +163,20 @@ class JfrArtifactParserTest {
   @StackTrace(true)
   static class AllocationSampleEvent extends Event {
     long weight;
+    String objectClass;
+  }
+
+  @Name("jdk.HeapDump")
+  @StackTrace(true)
+  static class HeapDumpEvent extends Event {
+    boolean onOutOfMemoryError;
+    String destination;
+  }
+
+  @Name("jdk.OldObjectSample")
+  @StackTrace(true)
+  static class OldObjectSampleEvent extends Event {
+    long objectSize;
     String objectClass;
   }
 

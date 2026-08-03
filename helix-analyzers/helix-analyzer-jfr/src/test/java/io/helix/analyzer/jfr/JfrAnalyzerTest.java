@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.helix.core.model.Artifact;
 import io.helix.core.model.ArtifactType;
 import io.helix.core.model.Finding;
+import io.helix.core.model.FindingReliability;
 import io.helix.core.model.FindingSeverity;
 import io.helix.core.model.JvmFlavour;
 import io.helix.core.model.ParsedArtifact;
@@ -86,6 +87,62 @@ class JfrAnalyzerTest {
         .satisfies(finding -> {
           assertThat(finding.explanation()).contains("estimated allocation weight");
           assertThat(finding.rawData()).containsEntry("measurement", "SAMPLED_WEIGHT");
+        });
+  }
+
+  @Test
+  void connectsOomToSurvivingObjectsAndTheirAllocationSite() {
+    Instant base = Instant.parse("2026-01-01T00:00:00Z");
+    List<JfrEvent> events = new ArrayList<>();
+    events.add(new JfrEvent(
+        "jdk.HeapDump",
+        base,
+        Duration.ZERO,
+        "main",
+        List.of(new JfrFrame("JVMFaultSimulator", "triggerHeapOOM", 67)),
+        0,
+        "",
+        "",
+        "",
+        "",
+        "",
+        Map.of("onOutOfMemoryError", true, "destination", "heap_dump_fault.hprof")));
+    for (int i = 0; i < 5; i++) {
+      events.add(new JfrEvent(
+          "jdk.OldObjectSample",
+          base.minusSeconds(5 - i),
+          Duration.ZERO,
+          "main",
+          List.of(new JfrFrame("JVMFaultSimulator", "triggerHeapOOM", 67)),
+          10L * 1024L * 1024L,
+          "byte[]",
+          "",
+          "",
+          "",
+          "",
+          Map.of()));
+    }
+
+    List<Finding> findings = new JfrAnalyzer().analyze(
+        parsedArtifact(new JfrRecordingData(events, Map.of())),
+        AnalysisContext.defaults());
+
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("JFR recorded an OutOfMemoryError"))
+        .singleElement()
+        .satisfies(finding -> {
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.FACT);
+          assertThat(finding.explanation()).contains("JVMFaultSimulator.triggerHeapOOM:67");
+        });
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("Large surviving objects sampled by JFR"))
+        .singleElement()
+        .satisfies(finding -> {
+          assertThat(finding.reliability()).isEqualTo(FindingReliability.DERIVED);
+          assertThat(finding.explanation())
+              .contains("5 surviving byte[]")
+              .contains("JVMFaultSimulator.triggerHeapOOM:67")
+              .contains("50.00 MB");
         });
   }
 

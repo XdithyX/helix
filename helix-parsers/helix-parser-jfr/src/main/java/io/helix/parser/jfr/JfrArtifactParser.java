@@ -40,7 +40,11 @@ public final class JfrArtifactParser implements ArtifactParser {
   private static final Set<String> SUPPORTED_EVENTS = Set.of(
       "jdk.GCPauseL1",
       "jdk.G1GarbageCollection",
+      "jdk.GarbageCollection",
       "jdk.GCHeapSummary",
+      "jdk.HeapDump",
+      "jdk.JavaErrorThrow",
+      "jdk.OldObjectSample",
       "jdk.ExecutionSample",
       "jdk.ObjectAllocationInNewTLAB",
       "jdk.ObjectAllocationOutsideTLAB",
@@ -154,7 +158,7 @@ public final class JfrArtifactParser implements ArtifactParser {
   private static List<TimelineEvent> timelineEvents(String artifactId, List<JfrEvent> events) {
     List<TimelineEvent> timeline = new ArrayList<>();
     for (JfrEvent event : events) {
-      TimelineEventType type = timelineType(event.eventType());
+      TimelineEventType type = timelineType(event);
       if (type == null) {
         continue;
       }
@@ -177,9 +181,19 @@ public final class JfrArtifactParser implements ArtifactParser {
     return timeline;
   }
 
-  private static TimelineEventType timelineType(String eventType) {
-    return switch (eventType) {
+  private static TimelineEventType timelineType(JfrEvent event) {
+    return switch (event.eventType()) {
       case "jdk.GCPauseL1", "jdk.G1GarbageCollection" -> TimelineEventType.GC_PAUSE;
+      case "jdk.GarbageCollection" -> isFullCollection(event)
+          ? TimelineEventType.FULL_GC
+          : TimelineEventType.GC_PAUSE;
+      case "jdk.HeapDump" -> Boolean.parseBoolean(String.valueOf(
+          event.attributes().getOrDefault("onOutOfMemoryError", false)))
+              ? TimelineEventType.OOM
+              : null;
+      case "jdk.JavaErrorThrow" -> event.className().contains("OutOfMemoryError")
+          ? TimelineEventType.OOM
+          : null;
       case "jdk.ExecutionSample" -> TimelineEventType.CPU_SPIKE;
       case "jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB", "jdk.ObjectAllocationSample" ->
           TimelineEventType.ALLOCATION_PRESSURE;
@@ -189,6 +203,11 @@ public final class JfrArtifactParser implements ArtifactParser {
       case "jdk.VirtualThreadPinned" -> TimelineEventType.VIRTUAL_THREAD_PINNED;
       default -> null;
     };
+  }
+
+  private static boolean isFullCollection(JfrEvent event) {
+    String name = String.valueOf(event.attributes().getOrDefault("name", ""));
+    return name.toLowerCase(Locale.ROOT).contains("full");
   }
 
   private static String threadName(RecordedEvent event) {
@@ -221,21 +240,55 @@ public final class JfrArtifactParser implements ArtifactParser {
   }
 
   private static long bytes(RecordedEvent event) {
-    return firstNumber(event, "allocationSize", "tlabSize", "weight", "bytesRead", "bytesWritten", "bytes")
+    return firstNumber(
+        event,
+        "allocationSize", "tlabSize", "weight", "objectSize", "bytesRead", "bytesWritten", "bytes")
         .map(Number::longValue)
         .orElse(0L);
   }
 
   private static String className(RecordedEvent event) {
-    Optional<Object> value = firstValue(event, "objectClass", "allocationClass", "monitorClass", "sampledObject");
+    Optional<Object> value = firstValue(
+        event, "objectClass", "allocationClass", "monitorClass", "sampledObject", "thrownClass", "object");
     if (value.isPresent()) {
       Object object = value.get();
       if (object instanceof RecordedClass recordedClass) {
-        return recordedClass.getName();
+        return displayClassName(recordedClass.getName());
+      }
+      if (object instanceof RecordedObject recordedObject && hasField(recordedObject, "type")) {
+        Object type = recordedObject.getValue("type");
+        if (type instanceof RecordedClass recordedClass) {
+          return displayClassName(recordedClass.getName());
+        }
       }
       return object.toString();
     }
     return "";
+  }
+
+  private static String displayClassName(String className) {
+    if (className == null || !className.startsWith("[")) {
+      return className == null ? "" : className;
+    }
+    int dimensions = 0;
+    while (dimensions < className.length() && className.charAt(dimensions) == '[') {
+      dimensions++;
+    }
+    String component = switch (className.substring(dimensions)) {
+      case "Z" -> "boolean";
+      case "B" -> "byte";
+      case "C" -> "char";
+      case "S" -> "short";
+      case "I" -> "int";
+      case "J" -> "long";
+      case "F" -> "float";
+      case "D" -> "double";
+      default -> className.substring(dimensions).startsWith("L")
+              && className.substring(dimensions).endsWith(";")
+          ? className.substring(dimensions + 1, className.length() - 1)
+          : className.substring(dimensions);
+    };
+    return component + "[]".repeat(dimensions);
   }
 
   private static String methodName(RecordedEvent event) {
@@ -289,6 +342,7 @@ public final class JfrArtifactParser implements ArtifactParser {
           "objectClass",
           "allocationClass",
           "monitorClass",
+          "object",
           "method").contains(name)) {
         continue;
       }
@@ -330,6 +384,9 @@ public final class JfrArtifactParser implements ArtifactParser {
     if (value instanceof RecordedMethod method) {
       String owner = method.getType() == null ? "" : method.getType().getName() + ".";
       return owner + method.getName();
+    }
+    if (value instanceof Number || value instanceof Boolean || value instanceof String) {
+      return value;
     }
     return value.toString();
   }

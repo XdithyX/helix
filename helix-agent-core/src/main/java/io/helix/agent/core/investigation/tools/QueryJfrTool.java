@@ -218,6 +218,7 @@ public final class QueryJfrTool implements DiagnosticTool<QueryJfrTool.Input> {
     row.put("ioTarget", event.ioTarget());
     row.put("reason", event.reason());
     row.put("topFrame", event.topFrame());
+    row.put("attributes", event.attributes());
     return row;
   }
 
