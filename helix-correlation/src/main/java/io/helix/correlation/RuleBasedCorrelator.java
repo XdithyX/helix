@@ -121,14 +121,14 @@ public final class RuleBasedCorrelator implements Correlator {
         TimelineEventType.ALLOCATION_PRESSURE,
         null,
         mapOf("heap.leak.path", "present"));
-    String explanation = "Allocation pressure was observed in the same analysis window as heap leak suspects in "
+    String explanation = "Allocation pressure was observed in the same analysis window as large retained heap graphs in "
         + heap.artifact().id() + ".";
     correlated.add(new CorrelatedEvent("AllocationPressure_HeapLeak_Correlation", allocation.get(), heapEvent, 0.74, explanation));
     findings.add(finding(
         "correlation-allocation-heap-leak",
         FindingSeverity.HIGH,
         FindingCategory.MEMORY,
-        "Allocation pressure aligns with heap leak suspects",
+        "Allocation pressure aligns with retained heap graphs",
         explanation,
         List.of(allocation.get(), heapEvent),
         "Compare allocation hotspots with the heap dump retention paths.",
@@ -140,25 +140,43 @@ public final class RuleBasedCorrelator implements Correlator {
       List<TimelineEvent> timeline,
       List<Finding> findings,
       List<CorrelatedEvent> correlated) {
-    for (TimelineEvent fullGc : events(timeline, TimelineEventType.FULL_GC)) {
-      Optional<TimelineEvent> oom = firstWithin(timeline, TimelineEventType.OOM, fullGc.timestamp(), Duration.ofMinutes(5));
-      if (oom.isEmpty()) {
-        continue;
-      }
-      String explanation = "A Full GC at " + fullGc.timestamp()
-          + " was followed by an OOM event within 5 minutes.";
-      correlated.add(new CorrelatedEvent("FullGC_OOM_Correlation", fullGc, oom.get(), 0.88, explanation));
-      findings.add(finding(
-          "correlation-full-gc-oom-" + findings.size(),
-          FindingSeverity.CRITICAL,
-          FindingCategory.MEMORY,
-          "OOM follows Full GC",
-          explanation,
-          List.of(fullGc, oom.get()),
-          "Treat this as memory exhaustion until heap evidence proves otherwise.",
-          RemediationType.CONFIG_CHANGE,
-          mapOf("rule", "FullGC_OOM_Correlation")));
+    Optional<TimelineEvent> oom = events(timeline, TimelineEventType.OOM).stream().findFirst();
+    if (oom.isEmpty()) {
+      return;
     }
+    List<TimelineEvent> fullGcs = collapseNearDuplicateObservations(events(timeline, TimelineEventType.FULL_GC).stream()
+        .filter(fullGc -> !fullGc.timestamp().isAfter(oom.get().timestamp()))
+        .filter(fullGc -> Duration.between(fullGc.timestamp(), oom.get().timestamp()).compareTo(Duration.ofMinutes(5)) <= 0)
+        .toList());
+    if (fullGcs.isEmpty()) {
+      return;
+    }
+    TimelineEvent latest = fullGcs.getLast();
+    long millisBeforeOom = Duration.between(latest.timestamp(), oom.get().timestamp()).toMillis();
+    String explanation = fullGcs.size() + " Full GC attempt(s) occurred within 5 minutes before the OOM; "
+        + "the last completed " + millisBeforeOom + "ms before it.";
+    correlated.add(new CorrelatedEvent("FullGC_OOM_Correlation", latest, oom.get(), 0.88, explanation));
+    findings.add(finding(
+        "correlation-full-gc-oom-" + findings.size(),
+        FindingSeverity.CRITICAL,
+        FindingCategory.MEMORY,
+        fullGcs.size() > 1 ? "OOM followed repeated Full GCs" : "OOM followed a Full GC",
+        explanation,
+        List.of(latest, oom.get()),
+        "Treat this as memory exhaustion until heap evidence proves otherwise.",
+        RemediationType.CONFIG_CHANGE,
+        mapOf("rule", "FullGC_OOM_Correlation", "fullGcCount", fullGcs.size())));
+  }
+
+  private static List<TimelineEvent> collapseNearDuplicateObservations(List<TimelineEvent> events) {
+    List<TimelineEvent> result = new ArrayList<>();
+    for (TimelineEvent event : events) {
+      if (result.isEmpty()
+          || Duration.between(result.getLast().timestamp(), event.timestamp()).abs().toMillis() > 5) {
+        result.add(event);
+      }
+    }
+    return result;
   }
 
   private static void applyThreadPoolGcPressure(

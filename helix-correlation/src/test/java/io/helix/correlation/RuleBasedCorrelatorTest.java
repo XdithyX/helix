@@ -58,8 +58,8 @@ class RuleBasedCorrelatorTest {
         .extracting(Finding::title)
         .contains(
             "Thread contention spike follows GC pause",
-            "Allocation pressure aligns with heap leak suspects",
-            "OOM follows Full GC",
+            "Allocation pressure aligns with retained heap graphs",
+            "OOM followed a Full GC",
             "Thread pool exhaustion coincides with GC pressure",
             "CPU spike follows deoptimization",
             "Repeated System.gc() suggests external trigger",
@@ -75,12 +75,35 @@ class RuleBasedCorrelatorTest {
         .extracting(Finding::reliability)
         .containsOnly(FindingReliability.HEURISTIC);
     assertThat(result.findings().stream()
-        .filter(finding -> finding.title().equals("Allocation pressure aligns with heap leak suspects")))
+        .filter(finding -> finding.title().equals("Allocation pressure aligns with retained heap graphs")))
         .hasSize(1);
     assertThat(result.findings().stream()
         .filter(finding -> finding.title().equals("Humongous allocation suggests region sizing review")))
         .singleElement()
         .satisfies(finding -> assertThat(finding.explanation()).startsWith("2 humongous allocation event(s)"));
+  }
+
+  @Test
+  void collapsesCrossArtifactFullGcObservationsIntoOneOomFinding() {
+    Instant base = Instant.parse("2026-01-01T00:00:00Z");
+    List<TimelineEvent> timeline = List.of(
+        event(base, "gc-log", TimelineEventType.FULL_GC, Duration.ofMillis(10), Map.of()),
+        event(base.plusMillis(1), "jfr", TimelineEventType.FULL_GC, Duration.ofMillis(10), Map.of()),
+        event(base.plusMillis(100), "gc-log", TimelineEventType.FULL_GC, Duration.ofMillis(7), Map.of()),
+        event(base.plusMillis(101), "jfr", TimelineEventType.FULL_GC, Duration.ofMillis(7), Map.of()),
+        event(base.plusMillis(200), "gc-log", TimelineEventType.FULL_GC, Duration.ofMillis(11), Map.of()),
+        event(base.plusMillis(201), "jfr", TimelineEventType.FULL_GC, Duration.ofMillis(11), Map.of()),
+        event(base.plusMillis(212), "jfr", TimelineEventType.OOM, Duration.ZERO, Map.of()));
+
+    CorrelationResult result = new RuleBasedCorrelator().correlate(List.of(), timeline);
+
+    assertThat(result.findings())
+        .filteredOn(finding -> finding.title().equals("OOM followed repeated Full GCs"))
+        .singleElement()
+        .satisfies(finding -> {
+          assertThat(finding.explanation()).startsWith("3 Full GC attempt(s)");
+          assertThat(finding.rawData()).containsEntry("fullGcCount", 3);
+        });
   }
 
   private static TimelineEvent event(

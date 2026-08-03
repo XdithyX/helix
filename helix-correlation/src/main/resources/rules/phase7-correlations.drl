@@ -29,7 +29,7 @@ when
   $oom : TimelineEvent(type() == TimelineEventType.OOM)
   eval(DroolsCorrelationContext.withinAfter($fullGc, $oom, 300000L))
 then
-  context.addFullGcOom($fullGc, $oom);
+  context.addFullGcOom($oom);
 end
 
 rule "ThreadPoolExhaustion_GCPressure_Correlation"
