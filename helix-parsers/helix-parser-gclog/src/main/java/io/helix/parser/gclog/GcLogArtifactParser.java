@@ -170,7 +170,6 @@ public final class GcLogArtifactParser implements ArtifactParser {
       event.collector = inferCollector(message, event.collector);
       event.fullGc = event.fullGc || containsIgnoreCase(message, "Full");
       event.concurrent = event.concurrent || containsIgnoreCase(message, "Concurrent");
-      event.humongousAllocation = event.humongousAllocation || containsIgnoreCase(message, "Humongous");
       parseNamedSpaces(message, event);
 
       if (unified.tags().contains("gc,start")) {
@@ -185,7 +184,6 @@ public final class GcLogArtifactParser implements ArtifactParser {
         event.name = event.name.isBlank() ? stripTrailingDuration(message) : event.name;
         event.cause = event.cause.isBlank() ? extractCause(message) : event.cause;
         event.systemGc = event.systemGc || containsIgnoreCase(message, "System.gc");
-        event.humongousAllocation = event.humongousAllocation || containsIgnoreCase(message, "Humongous");
         parseHeapTransition(message, event);
       }
     }
@@ -196,6 +194,7 @@ public final class GcLogArtifactParser implements ArtifactParser {
           if (event.duration.isZero()) {
             warnings.add("GC event " + event.id + " did not include a pause duration.");
           }
+          event.humongousAllocation = containsIgnoreCase(event.cause, "Humongous");
           return event.toEvent();
         })
         .toList();
@@ -527,7 +526,10 @@ public final class GcLogArtifactParser implements ArtifactParser {
             || containsIgnoreCase(value, "G1")
             || containsIgnoreCase(value, "Warmup"))
         .reduce((first, second) -> second)
-        .orElse(values.isEmpty() ? "" : values.getFirst());
+        .orElseGet(() -> values.stream()
+            .filter(value -> memoryToMb(value).isEmpty())
+            .findFirst()
+            .orElse(""));
   }
 
   private static GcCollector inferCollector(String text, GcCollector fallback) {

@@ -12,8 +12,12 @@ import io.helix.core.spi.ParseContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class GcLogArtifactParserTest {
+  @TempDir
+  Path tempDir;
+
   @Test
   void recognizesGcLogFilesAndHints() {
     GcLogArtifactParser parser = new GcLogArtifactParser();
@@ -81,6 +85,26 @@ class GcLogArtifactParserTest {
     assertThat(data.events()).hasSize(2);
     assertThat(parsed.warnings()).isNotEmpty();
     assertThat(data.events().getFirst().durationMillis()).isZero();
+  }
+
+  @Test
+  void doesNotTreatRegionDetailsOrCommittedHeapSizeAsGcCauses() throws Exception {
+    Path log = tempDir.resolve("gc-details.log");
+    Files.writeString(log, """
+        [2026-01-01T00:00:00.000+0000][0.100s][info][gc] Using G1
+        [2026-01-01T00:00:01.000+0000][1.000s][info][gc,start] GC(1) Pause Young (Concurrent Start) (G1 Humongous Allocation)
+        [2026-01-01T00:00:01.001+0000][1.001s][info][gc,heap] GC(1) Humongous regions: 0->0
+        [2026-01-01T00:00:01.010+0000][1.010s][info][gc] GC(1) Pause Young (Concurrent Start) (G1 Humongous Allocation) 10M->9M(22M) 10.000ms
+        [2026-01-01T00:00:02.000+0000][2.000s][info][gc,start] GC(2) Pause Remark
+        [2026-01-01T00:00:02.005+0000][2.005s][info][gc] GC(2) Pause Remark 15M->15M(22M) 5.000ms
+        """);
+
+    GcLogData data = gcData(new GcLogArtifactParser().parse(log, ParseContext.defaults()));
+
+    assertThat(data.events()).filteredOn(event -> event.humongousAllocation()).hasSize(1);
+    assertThat(data.events()).filteredOn(event -> event.id().equals("gc-2"))
+        .singleElement()
+        .satisfies(event -> assertThat(event.cause()).isEmpty());
   }
 
   private static ParsedArtifact parse(String fileName) throws Exception {
