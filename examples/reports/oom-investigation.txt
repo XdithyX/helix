@@ -1,0 +1,85 @@
+Helix Diagnostic Report — Sanitized Real Output Excerpt
+========================================================
+
+Scenario
+--------
+A controlled JVM fault fixture repeatedly allocated 10 MiB byte arrays and retained
+them in a local collection. Helix analyzed the resulting JFR recording, G1 GC log,
+and HPROF heap dump. Local filesystem paths and generated artifact identifiers have
+been removed from this excerpt.
+
+Question
+--------
+Why did this JVM run out of memory?
+
+Key Findings
+------------
+
+[CRITICAL] JFR recorded an OutOfMemoryError
+JFR recorded an OutOfMemoryError-triggered heap dump on thread main at
+JVMFaultSimulator.triggerHeapOOM:67.
+Reliability: FACT
+Confidence: 0.98
+
+[HIGH] Large surviving objects sampled by JFR
+JFR sampled 5 surviving byte[] objects allocated at
+JVMFaultSimulator.triggerHeapOOM:67, totaling 50.00 MB of sampled object size.
+Reliability: DERIVED
+Confidence: 0.90
+
+[HIGH] Large retained object graph: java.lang.Thread
+java.lang.Thread is the reported retention root/dominator and retains 50.0 MB
+(94.1%) of heap. This establishes reachability, not that the root itself is leaking.
+Retention path: [GCRoot] -> main Thread.
+Reliability: DERIVED
+Confidence: 0.90
+
+[HIGH] Large byte[] retention
+byte[] accounts for 51.0 MB (96.0% of heap) across 17,481 byte arrays.
+Reliability: HEURISTIC
+Confidence: 0.80
+
+[HIGH] Repeated Full GCs failed to reclaim heap
+The final two measured Full GCs reclaimed 0.00 MB in total; the last left 58.00 MB
+used out of 64.00 MB committed.
+Reliability: DERIVED
+Confidence: 0.94
+
+[MEDIUM] Humongous allocation GC pattern
+4 GC events were caused by humongous allocation pressure.
+Reliability: DERIVED
+Confidence: 0.80
+
+[INFO] JFR allocation hotspots
+Top sampled allocation site is JVMFaultSimulator.triggerHeapOOM:67 with 50.05 MB
+estimated allocation weight across 15 sample events.
+Reliability: DERIVED
+Confidence: 0.78
+
+Investigation
+-------------
+Status: CONCLUDED
+
+Answer: The JVM ran out of memory due to a memory leak caused by the continuous
+allocation and retention of large byte[] objects. These objects, each approximately
+10 MB in size, were allocated by JVMFaultSimulator.triggerHeapOOM:67 on the main
+thread and were not reclaimed by the garbage collector. Evidence from the heap dump
+shows that byte[] objects constitute 95.97% of the heap, and java.lang.Thread (main
+thread) is the dominant object retaining 94.07% of the heap. JFR old-object samples
+confirm that these large byte[] objects were surviving garbage collection. Repeated
+Full GCs were observed leading up to the OutOfMemoryError, but they failed to reclaim
+any significant memory, indicating that the retained objects were still reachable
+and preventing heap recovery.
+
+Evidence tools used
+-------------------
+- search_findings
+- query_heap: dominators and byte-array retention
+- query_jfr: OOM, old-object, and allocation evidence
+- query_gc: Full GC reclamation and humongous-allocation events
+
+Validation
+----------
+This conclusion was checked against the fault-fixture source and the raw JFR, GC,
+and HPROF evidence. The main thread is the GC root retaining the local collection;
+it is not itself identified as the leaking object.
