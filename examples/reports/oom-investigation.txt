@@ -56,6 +56,18 @@ estimated allocation weight across 15 sample events.
 Reliability: DERIVED
 Confidence: 0.78
 
+Cross-Artifact Correlation
+--------------------------
+JFR identified repeated large byte[] allocations at
+JVMFaultSimulator.triggerHeapOOM:67 and recorded the resulting OutOfMemoryError.
+The GC log showed humongous-allocation pressure followed by repeated Full GCs that
+reclaimed no meaningful memory. The heap dump confirmed that the allocated byte[]
+objects remained reachable and occupied approximately 96% of the captured heap.
+
+Correlated evidence chain:
+Large byte[] allocations -> humongous-allocation pressure -> ineffective Full GCs
+-> OutOfMemoryError
+
 Investigation
 -------------
 Status: CONCLUDED
