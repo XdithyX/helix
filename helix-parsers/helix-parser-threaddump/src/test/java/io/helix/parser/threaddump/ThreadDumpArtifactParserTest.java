@@ -123,6 +123,60 @@ class ThreadDumpArtifactParserTest {
         .containsExactly("Deadlock-1", "Deadlock-2");
   }
 
+  @Test
+  void parsesReentrantLockOwnershipFromOwnableSynchronizers() throws Exception {
+    Path dump = tempDir.resolve("reentrant-lock-deadlock.txt");
+    Files.writeString(dump, """
+        Full thread dump OpenJDK 64-Bit Server VM:
+
+        "Deadlock-1" #31 waiting on condition
+           java.lang.Thread.State: WAITING (parking)
+                at jdk.internal.misc.Unsafe.park(java.base@26/Native Method)
+                - parking to wait for  <0x0000000000000002> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+                at com.example.Deadlock.first(Deadlock.java:21)
+
+           Locked ownable synchronizers:
+                - <0x0000000000000001> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+
+        "Deadlock-2" #32 waiting on condition
+           java.lang.Thread.State: WAITING (parking)
+                at jdk.internal.misc.Unsafe.park(java.base@26/Native Method)
+                - parking to wait for  <0x0000000000000001> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+                at com.example.Deadlock.second(Deadlock.java:31)
+
+           Locked ownable synchronizers:
+                - <0x0000000000000002> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+
+        Found one Java-level deadlock:
+        =============================
+        "Deadlock-1":
+          waiting for ownable synchronizer 0x0000000000000002, which is held by "Deadlock-2"
+        """);
+
+    ParsedArtifact parsed = new ThreadDumpArtifactParser().parse(dump, ParseContext.defaults());
+    ThreadDumpData data = (ThreadDumpData) parsed.data().get(ThreadDumpArtifactParser.THREAD_DATA_KEY);
+
+    assertThat(data.snapshots().getFirst().threads())
+        .filteredOn(thread -> thread.name().equals("Deadlock-1"))
+        .singleElement()
+        .satisfies(thread -> {
+          assertThat(thread.state()).isEqualTo(JavaThreadState.WAITING);
+          assertThat(thread.waitingOnLock().identity()).isEqualTo("0x0000000000000002");
+          assertThat(thread.heldLocks())
+              .singleElement()
+              .satisfies(lock -> {
+                assertThat(lock.identity()).isEqualTo("0x0000000000000001");
+                assertThat(lock.ownerThreadName()).isEqualTo("Deadlock-1");
+              });
+        });
+    assertThat(data.snapshots().getFirst().threads())
+        .filteredOn(thread -> thread.name().equals("Deadlock-2"))
+        .singleElement()
+        .satisfies(thread -> assertThat(thread.heldLocks())
+            .singleElement()
+            .satisfies(lock -> assertThat(lock.identity()).isEqualTo("0x0000000000000002")));
+  }
+
   private static ThreadDumpData parseFixture(String fileName) throws Exception {
     Path path = threadFixture(fileName);
     ParsedArtifact parsed = new ThreadDumpArtifactParser().parse(path, ParseContext.defaults());

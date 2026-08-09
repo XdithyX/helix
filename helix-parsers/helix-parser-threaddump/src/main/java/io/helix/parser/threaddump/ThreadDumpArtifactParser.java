@@ -41,6 +41,8 @@ public final class ThreadDumpArtifactParser implements ArtifactParser {
       Pattern.compile("java\\.lang\\.Thread\\.State:\\s+([A-Z_]+)");
   private static final Pattern HOTSPOT_LOCK =
       Pattern.compile("-\\s+(waiting to lock|waiting on|parking to wait for|locked)\\s+<([^>]+)>\\s+\\(a\\s+([^\\)]+)\\)");
+  private static final Pattern HOTSPOT_OWNABLE_SYNCHRONIZER =
+      Pattern.compile("-\\s+<([^>]+)>\\s+\\(a\\s+([^\\)]+)\\)");
   private static final Pattern OPENJ9_THREAD =
       Pattern.compile("^3XMTHREADINFO\\s+\"([^\"]+)\"(.*)$");
   private static final Pattern OPENJ9_BLOCKED =
@@ -132,6 +134,7 @@ public final class ThreadDumpArtifactParser implements ArtifactParser {
     List<String> warnings = new ArrayList<>();
     List<ThreadSample> threads = new ArrayList<>();
     MutableThread current = null;
+    boolean inOwnableSynchronizers = false;
     Instant pendingTimestamp = null;
     Instant snapshotTimestamp = fallbackCapturedAt;
     int lineNumber = 0;
@@ -169,6 +172,7 @@ public final class ThreadDumpArtifactParser implements ArtifactParser {
       if (header.matches()) {
         current = finishThread(current, threads, warnings);
         current = new MutableThread(header.group(1), line);
+        inOwnableSynchronizers = false;
         current.javaThreadId = findToken(line, "#([0-9]+)").orElse("");
         current.osThreadId = findToken(line, "\\bnid=([^\\s]+)").orElse("");
         current.cpuTimeMillis = parseCpuMillis(line);
@@ -180,6 +184,27 @@ public final class ThreadDumpArtifactParser implements ArtifactParser {
       }
 
       String trimmed = line.trim();
+      if (trimmed.equals("Locked ownable synchronizers:")) {
+        inOwnableSynchronizers = true;
+        continue;
+      }
+
+      if (inOwnableSynchronizers) {
+        if (trimmed.equals("- None") || trimmed.isEmpty()) {
+          continue;
+        }
+        Matcher synchronizer = HOTSPOT_OWNABLE_SYNCHRONIZER.matcher(trimmed);
+        if (synchronizer.matches()) {
+          current.heldLocks.add(new ThreadLock(
+              synchronizer.group(1),
+              synchronizer.group(2),
+              current.name,
+              "locked ownable synchronizer"));
+          continue;
+        }
+        inOwnableSynchronizers = false;
+      }
+
       Matcher state = HOTSPOT_STATE.matcher(trimmed);
       if (state.find()) {
         current.state = parseState(state.group(1));
