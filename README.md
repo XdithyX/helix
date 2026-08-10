@@ -206,7 +206,7 @@ helix-cli                          Executable command-line application
 
 Parsers depend on artifact formats, while analyzers depend only on normalized records in `helix-core`. This separation allows another parser implementation to feed the same analysis rules and keeps deterministic logic testable without large binary fixtures.
 
-<!-- See [DECISIONS.md](DECISIONS.md) for architectural decisions and implementation trade-offs. -->
+See the [architectural decision log](DECISIONS.md) for the context, alternatives, consequences, and revisit criteria behind the major implementation choices.
 
 ## Current limitations
 
