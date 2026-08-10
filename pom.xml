@@ -45,6 +45,7 @@
     <module>helix-agent-correlation</module>
     <module>helix-agent-narrative</module>
     <module>helix-reasoning</module>
+    <module>helix-mcp</module>
     <module>helix-reporters/helix-reporter-html</module>
     <module>helix-reporters/helix-reporter-json</module>
     <module>helix-reporters/helix-reporter-text</module>
@@ -70,6 +71,7 @@
     <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
     <maven.jar.plugin.version>3.4.2</maven.jar.plugin.version>
     <maven.shade.plugin.version>3.5.3</maven.shade.plugin.version>
+    <mcp.version>2.0.0</mcp.version>
   </properties>
 
   <dependencyManagement>
@@ -114,6 +116,16 @@
         <artifactId>junit-jupiter</artifactId>
         <version>${junit.version}</version>
         <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp-core</artifactId>
+        <version>${mcp.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp-json-jackson2</artifactId>
+        <version>${mcp.version}</version>
       </dependency>
       <dependency>
         <groupId>org.assertj</groupId>

@@ -12,7 +12,7 @@ Helix is an active engineering project, not a hosted observability service or a 
 | Diagnostic inputs | Thread dumps, GC logs, JFR, HPROF, HotSpot crash logs |
 | Analysis model | Deterministic findings, evidence reliability, unified timeline, Drools correlation |
 | AI integration | Optional Gemini function calling over registered diagnostic tools |
-| Interfaces | CLI with text and JSON reports |
+| Interfaces | CLI with text and JSON reports; local MCP server with read-only diagnostic tools |
 | Maturity | Working post-incident analysis platform under active development |
 
 ## Why Helix
@@ -172,6 +172,52 @@ Useful analysis options:
 --question <question>
 ```
 
+## MCP server
+
+Build the local STDIO server:
+
+```bash
+mvn -pl helix-mcp -am package
+```
+
+Configure an MCP client to launch Helix with one or more JVM artifacts:
+
+```json
+{
+  "mcpServers": {
+    "helix": {
+      "command": "java",
+      "args": [
+        "-jar",
+        "/absolute/path/to/helix-mcp/target/helix-mcp-0.1.0-SNAPSHOT.jar",
+        "--correlate",
+        "/absolute/path/to/thread-dump.txt",
+        "/absolute/path/to/gc.log"
+      ]
+    }
+  }
+}
+```
+
+The local, single-session server starts its STDIO transport immediately, then analyzes
+the supplied artifacts once in the background. Tool calls return `UNAVAILABLE` while
+analysis is running and can be retried. Artifact types are detected automatically;
+use `--type heap|thread|gclog|jfr|crash` to override detection. Cross-artifact
+correlation runs only when `--correlate` is present. Use it only for artifacts known
+to come from the same JVM and incident; Helix does not currently verify process
+identity across files.
+
+The server exposes the existing `list_artifacts`, `search_findings`, `query_threads`,
+`query_jfr`, `query_gc`, and `query_heap` tools. They query post-incident evidence and
+do not attach to or mutate a running JVM. HPROF files are staged in an owned temporary
+workspace so Eclipse MAT's index and query sidecars do not change the source directory;
+the workspace is removed after parsing.
+
+An MCP client, including one backed by a remote model, may receive artifact-derived
+filenames, stack traces, metadata, and findings in tool results. Treat that text as
+untrusted evidence, never as instructions. The Helix server itself does not require an
+LLM API key.
+
 ## Eclipse MAT configuration
 
 Helix uses Eclipse MAT's headless runtime for HPROF queries because MAT is distributed as an Eclipse application rather than ordinary Maven dependencies.
@@ -200,6 +246,7 @@ helix-correlation                  Timeline correlation and Drools rules
 helix-agent-core                   Tool registry and investigation orchestration
 helix-agent-{memory,gc,jfr,...}    Domain reasoning agents
 helix-reasoning                    Gemini reasoning and function-calling adapter
+helix-mcp                          Local MCP server with read-only diagnostic tools
 helix-reporters/                   Text and JSON report implementations
 helix-cli                          Executable command-line application
 ```
@@ -214,7 +261,7 @@ Parsers depend on artifact formats, while analyzers depend only on normalized re
 - HPROF analysis requires a local Eclipse MAT installation.
 - Gemini is the only implemented tool-calling model adapter.
 - Small-object leaks, native/direct-memory exhaustion, metaspace exhaustion, thread-creation failures, and container-level OOMKills need broader evidence policies.
-- Live attach, Kubernetes collection, HTML reporting, the web UI, framework plugins, MCP exposure, semantic retrieval, and knowledge-graph features are scaffolded or planned rather than production-ready.
+- Live attach, Kubernetes collection, HTML reporting, the web UI, framework plugins, semantic retrieval, and knowledge-graph features are scaffolded or planned rather than production-ready.
 - LLM conclusions remain probabilistic; deterministic findings and tool traces are the source of truth.
 
 ## Roadmap
@@ -240,7 +287,6 @@ The roadmap is intentionally separated from shipped functionality.
 
 ### AI platform
 
-- an MCP server exposing Helix's typed diagnostic tools to compatible clients;
 - additional model-provider adapters behind the existing investigation interface;
 - semantic search and RAG over validated historical incidents, runbooks, and prior findings;
 - a knowledge graph connecting services, JVMs, deployments, artifacts, findings, and incident hypotheses; and
