@@ -15,7 +15,6 @@ import io.helix.core.spi.CorrelationResult;
 import io.helix.core.spi.ParseContext;
 import io.helix.core.spi.ParseException;
 import io.helix.investigations.InvestigationId;
-import io.helix.investigations.InvestigationStatus;
 import io.helix.investigations.InvestigationSummary;
 import io.helix.investigations.LocalWorkspaceInvestigationStore;
 import io.helix.investigations.StoredInvestigation;

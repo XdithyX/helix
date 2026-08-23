@@ -75,7 +75,6 @@ public final class LocalWorkspaceInvestigationStore implements InvestigationStor
     return investigation.summary();
   }
 
-  @Override
   public InvestigationSummary saveFailed(InvestigationSummary failedSummary) {
     if (failedSummary.status() != InvestigationStatus.FAILED) {
       throw new IllegalArgumentException("saveFailed requires FAILED status");
@@ -127,6 +126,7 @@ public final class LocalWorkspaceInvestigationStore implements InvestigationStor
     try (var entries = Files.list(root)) {
       entries
           .filter(Files::isDirectory)
+          .filter(dir -> !dir.getFileName().toString().endsWith("_tmp"))
           .sorted()
           .forEach(dir -> {
             Path manifestFile = dir.resolve(MANIFEST_FILE);

@@ -129,13 +129,10 @@ final class WorkspaceMcpServer {
   // ---- dispatch ----
 
   private McpSchema.CallToolResult executeListInvestigations(Map<String, Object> arguments) {
-    // list_investigations has an empty Input record — no arguments needed
-    InvestigationContext placeholder = emptyContext();
-    ToolCall call = new ToolCall("", "list_investigations",
-        objectMapper.valueToTree(Map.of()));
-    // Execute directly through the list tool (registry does not hold it)
+    // list_investigations has an empty Input record — no arguments needed.
+    // Execute directly; the tool needs no investigation context.
     ListInvestigationsTool tool = new ListInvestigationsTool(this::investigationSummaries);
-    ToolResult result = tool.execute(new ListInvestigationsTool.Input(), placeholder);
+    ToolResult result = tool.execute(new ListInvestigationsTool.Input(), emptyContext());
     return toMcpResult(result);
   }
 

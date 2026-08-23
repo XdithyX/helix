@@ -12,7 +12,7 @@ import java.util.Optional;
 public interface InvestigationStore {
 
   /**
-   * Persist an investigation atomically. The stored investigation is only
+   * Persist a READY investigation atomically. The stored investigation is only
    * visible to {@link #find} and {@link #list} after this method returns
    * successfully. An interrupted or failed save must never produce a queryable
    * READY record.
@@ -20,14 +20,8 @@ public interface InvestigationStore {
   InvestigationSummary save(StoredInvestigation investigation);
 
   /**
-   * Save a FAILED investigation summary (no evidence context).
-   * Used when import fails; the failure reason is preserved for CLI inspection.
-   */
-  InvestigationSummary saveFailed(InvestigationSummary failedSummary);
-
-  /**
    * Find a stored investigation by ID. Returns {@link Optional#empty()} for
-   * unknown, deleted, or FAILED IDs (those have no queryable evidence context).
+   * unknown or FAILED IDs (those have no queryable evidence context).
    */
   Optional<StoredInvestigation> find(InvestigationId id);
 
