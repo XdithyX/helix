@@ -37,6 +37,7 @@
     <module>helix-analyzers/helix-analyzer-jit</module>
     <module>helix-analyzers/helix-analyzer-crash</module>
     <module>helix-correlation</module>
+    <module>helix-investigations</module>
     <module>helix-agent-core</module>
     <module>helix-agent-memory</module>
     <module>helix-agent-threads</module>
