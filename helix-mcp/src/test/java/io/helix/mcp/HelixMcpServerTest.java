@@ -133,6 +133,7 @@ class HelixMcpServerTest {
 
     assertThat(options.artifactTypeOverride()).isEqualTo(ArtifactType.THREAD_DUMP);
     assertThat(options.correlate()).isTrue();
+    assertThat(options.workspacePath()).isNull();
     assertThat(options.artifactPaths()).containsExactly(Path.of("diagnostic.data"));
     assertThatThrownBy(() -> HelixMcpMain.parseArguments(
         new String[] {"--type", "unknown", "diagnostic.data"}))

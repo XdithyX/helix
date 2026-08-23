@@ -14,6 +14,7 @@ import picocli.CommandLine.Spec;
     mixinStandardHelpOptions = true,
     subcommands = {
       AnalyzeCommand.class,
+      InvestigationCommand.class,
       VersionCommand.class
     })
 public final class HelixMain implements Callable<Integer> {
