@@ -15,7 +15,7 @@ The initial model request contains the question, a sanitized artifact summary, a
 - `list_artifacts`
 - `search_findings`
 - `query_threads`
-- `query_jfr`
+- `query_jfr``
 - `query_gc`
 - `query_heap`
 
