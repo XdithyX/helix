@@ -331,33 +331,6 @@ public final class JfrAnalyzer implements Analyzer {
             "A few deopts are normal; repeated deopts in one method can explain CPU regressions.")),
         mapOf("reasons", byReason, "events", deopts.stream().map(JfrAnalyzer::eventSummary).toList())));
 
-    Map<String, Long> byMethod = deopts.stream()
-        .collect(Collectors.groupingBy(
-            event -> event.methodName().isBlank() ? event.topFrame() : event.methodName(),
-            LinkedHashMap::new,
-            Collectors.counting()));
-    List<Map.Entry<String, Long>> repeated = byMethod.entrySet().stream()
-        .filter(entry -> entry.getValue() > 3)
-        .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-        .toList();
-    if (!repeated.isEmpty()) {
-      findings.add(new Finding(
-          artifact.artifact().id() + "-jfr-repeated-deoptimization",
-          FindingSeverity.MEDIUM,
-          FindingCategory.JIT,
-          "Repeated JFR deoptimizations",
-          repeated.getFirst().getKey() + " deoptimized " + repeated.getFirst().getValue()
-              + " times in the recording.",
-          0.84,
-          List.of(artifact.artifact().id()),
-          List.of(),
-          List.of(new Remediation(
-              "Review type stability and uncommon traps in repeatedly deoptimized methods.",
-              RemediationType.CODE_CHANGE,
-              "",
-              "More than three deoptimizations in one method is a useful signal for JIT regressions.")),
-          mapOf("methods", repeated.stream().map(entry -> mapOf("method", entry.getKey(), "count", entry.getValue())).toList())));
-    }
   }
 
   private static void addVirtualThreadPinningFinding(

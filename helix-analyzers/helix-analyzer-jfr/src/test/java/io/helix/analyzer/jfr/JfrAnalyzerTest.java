@@ -36,8 +36,10 @@ class JfrAnalyzerTest {
             "JFR lock contention profile",
             "Slow JFR I/O operation",
             "JFR deoptimization summary",
-            "Repeated JFR deoptimizations",
             "Virtual thread pinning detected");
+    assertThat(findings)
+        .extracting(Finding::title)
+        .doesNotContain("Repeated JFR deoptimizations");
     assertThat(findings)
         .filteredOn(finding -> finding.title().equals("Virtual thread pinning detected"))
         .singleElement()
