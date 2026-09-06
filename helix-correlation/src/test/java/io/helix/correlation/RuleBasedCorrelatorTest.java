@@ -65,7 +65,7 @@ class RuleBasedCorrelatorTest {
             "Repeated System.gc() suggests external trigger",
             "Humongous allocation suggests region sizing review",
             "Virtual thread pinning correlates with blocking I/O");
-    assertThat(result.summary().narrative()).contains("Phase 7 correlation rule");
+    assertThat(result.summary().narrative()).contains("cross-artifact correlation");
     assertThat(result.summary().correlatedEvents()).hasSizeGreaterThanOrEqualTo(8);
     assertThat(result.summary().metrics().get("bundledDrlRules").toString())
         .contains("GCPressure_ThreadContention_Correlation")

@@ -288,7 +288,7 @@ public final class DroolsCorrelationContext {
         "fallbackReason", fallbackReason);
     if (correlated.isEmpty()) {
       return new CorrelationSummary(
-          "No Phase 7 cross-artifact correlations matched the current timeline.",
+          "No cross-artifact correlations matched the available timeline.",
           List.of(),
           metrics);
     }
@@ -296,8 +296,8 @@ public final class DroolsCorrelationContext {
     String narrative = "At " + first.primaryEvent().timestamp() + ", "
         + first.explanation()
         + " Across the analysis window, Helix matched " + correlated.size()
-        + " Phase 7 correlation rule(s), suggesting the most likely sequence is: "
-        + correlated.stream().limit(3).map(CorrelatedEvent::ruleName).reduce((left, right) -> left + " -> " + right).orElse(first.ruleName())
+        + " cross-artifact correlation(s): "
+        + correlated.stream().limit(3).map(CorrelatedEvent::ruleName).reduce((left, right) -> left + ", " + right).orElse(first.ruleName())
         + ".";
     return new CorrelationSummary(narrative, List.copyOf(correlated), metrics);
   }
