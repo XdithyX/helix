@@ -44,7 +44,6 @@ class ThreadAnalyzerTest {
             "Lock contention ranking",
             "Thread state distribution",
             "Duplicate thread stacks",
-            "CPU hotspot thread",
             "Thread pool exhaustion: Spark executor task launch workers");
     assertThat(findings)
         .filteredOn(finding -> finding.title().equals("Java thread deadlock detected"))
@@ -86,6 +85,76 @@ class ThreadAnalyzerTest {
     assertThat(findings)
         .extracting(Finding::title)
         .contains("Threads stuck across snapshots");
+  }
+
+  @Test
+  void detectsCpuHotspotFromCpuGrowthAcrossTimestampedSnapshots() {
+    ThreadSample before = thread(
+        "cpu-worker",
+        JavaThreadState.RUNNABLE,
+        List.of(frame("com.example.Cpu", "spin", 10)),
+        List.of(),
+        null,
+        100);
+    ThreadSample after = thread(
+        "cpu-worker",
+        JavaThreadState.RUNNABLE,
+        List.of(frame("com.example.Cpu", "spin", 10)),
+        List.of(),
+        null,
+        8_100);
+    ParsedArtifact artifact = parsedArtifact(new ThreadDumpData(
+        List.of(
+            new ThreadDumpSnapshot(
+                Instant.parse("2026-01-01T00:00:00Z"), ThreadDumpFormat.HOTSPOT, List.of(before), Map.of()),
+            new ThreadDumpSnapshot(
+                Instant.parse("2026-01-01T00:00:10Z"), ThreadDumpFormat.HOTSPOT, List.of(after), Map.of())),
+        ThreadDumpFormat.HOTSPOT,
+        Map.of()));
+
+    List<Finding> findings = new ThreadAnalyzer().analyze(artifact, AnalysisContext.defaults());
+
+    assertThat(findings)
+        .filteredOn(finding -> finding.title().equals("CPU hotspot thread"))
+        .singleElement()
+        .satisfies(finding -> assertThat(finding.explanation())
+            .contains("8000ms CPU over 10000ms")
+            .contains("80.0% of one core"));
+  }
+
+  @Test
+  void doesNotReportConditionWaitOrSingleAcquisitionWaiterAsContention() {
+    ThreadLock condition = new ThreadLock("0x1000", "java.lang.ref.ReferenceQueue$Lock", "Finalizer", "waiting on");
+    ThreadSample finalizer = new ThreadSample(
+        "Finalizer",
+        "",
+        "",
+        JavaThreadState.WAITING,
+        List.of(frame("java.lang.Object", "wait", -1)),
+        List.of(new ThreadLock("0x1000", "java.lang.ref.ReferenceQueue$Lock", "", "locked")),
+        null,
+        condition,
+        0,
+        "\"Finalizer\"");
+    ThreadSample singleWaiter = thread(
+        "single-waiter",
+        JavaThreadState.BLOCKED,
+        List.of(frame("com.example.Worker", "run", 12)),
+        List.of(),
+        lock("0x2000", "java.lang.Object"),
+        0);
+    ParsedArtifact artifact = parsedArtifact(new ThreadDumpData(
+        List.of(new ThreadDumpSnapshot(
+            Instant.parse("2026-01-01T00:00:00Z"),
+            ThreadDumpFormat.HOTSPOT,
+            List.of(finalizer, singleWaiter),
+            Map.of())),
+        ThreadDumpFormat.HOTSPOT,
+        Map.of()));
+
+    List<Finding> findings = new ThreadAnalyzer().analyze(artifact, AnalysisContext.defaults());
+
+    assertThat(findings).extracting(Finding::title).doesNotContain("Lock contention ranking");
   }
 
   private static List<ThreadSample> phaseThreeThreads() {

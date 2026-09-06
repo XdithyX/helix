@@ -16,6 +16,7 @@ import io.helix.core.model.thread.ThreadLock;
 import io.helix.core.model.thread.ThreadSample;
 import io.helix.core.spi.AnalysisContext;
 import io.helix.core.spi.Analyzer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -36,7 +37,8 @@ public final class ThreadAnalyzer implements Analyzer {
   private static final int MIN_DEDUP_THREADS = 2;
   private static final int MIN_POOL_THREADS = 3;
   private static final double POOL_EXHAUSTION_THRESHOLD = 0.90;
-  private static final long CPU_HOTSPOT_THRESHOLD_MILLIS = 100;
+  private static final long CPU_HOTSPOT_MIN_DELTA_MILLIS = 100;
+  private static final double CPU_HOTSPOT_MIN_CORE_UTILIZATION = 0.50;
   private static final Pattern TOMCAT_EXECUTOR =
       Pattern.compile("(.+?-(?:nio|bio|apr)-\\d+)-exec-\\d+");
   private static final Pattern FORK_JOIN =
@@ -57,7 +59,7 @@ public final class ThreadAnalyzer implements Analyzer {
     addContentionFinding(artifact, latest, findings);
     addStateDistributionFinding(artifact, latest, findings);
     addStackDeduplicationFinding(artifact, latest, findings);
-    addCpuHotspotFinding(artifact, latest, findings);
+    addCpuHotspotFinding(artifact, threadDump, findings);
     addThreadPoolExhaustionFindings(artifact, latest, findings);
     addProgressionFinding(artifact, threadDump, findings);
     return findings;
@@ -104,7 +106,7 @@ public final class ThreadAnalyzer implements Analyzer {
       ThreadDumpSnapshot snapshot,
       List<Finding> findings) {
     List<LockContention> ranking = lockContention(snapshot);
-    if (ranking.isEmpty()) {
+    if (ranking.isEmpty() || ranking.getFirst().waitingThreads().size() < 2) {
       return;
     }
     LockContention top = ranking.getFirst();
@@ -188,33 +190,67 @@ public final class ThreadAnalyzer implements Analyzer {
 
   private static void addCpuHotspotFinding(
       ParsedArtifact artifact,
-      ThreadDumpSnapshot snapshot,
+      ThreadDumpData threadDump,
       List<Finding> findings) {
-    List<ThreadSample> hotThreads = snapshot.threads().stream()
-        .filter(thread -> thread.cpuTimeMillis() > CPU_HOTSPOT_THRESHOLD_MILLIS)
-        .sorted(Comparator.comparing(ThreadSample::cpuTimeMillis).reversed())
+    if (threadDump.snapshots().size() < 2) {
+      return;
+    }
+    ThreadDumpSnapshot first = threadDump.snapshots().getFirst();
+    ThreadDumpSnapshot last = threadDump.snapshots().getLast();
+    long elapsedMillis = Duration.between(first.capturedAt(), last.capturedAt()).toMillis();
+    if (elapsedMillis <= 0) {
+      return;
+    }
+
+    Map<String, ThreadSample> firstByName = byName(first.threads());
+    List<CpuHotspot> hotThreads = last.threads().stream()
+        .map(thread -> cpuHotspot(thread, firstByName.get(thread.name()), elapsedMillis))
+        .flatMap(Optional::stream)
+        .sorted(Comparator.comparing(CpuHotspot::coreUtilization).reversed())
         .toList();
     if (hotThreads.isEmpty()) {
       return;
     }
-    ThreadSample top = hotThreads.getFirst();
+    CpuHotspot top = hotThreads.getFirst();
+    double utilizationPercent = Math.round(top.coreUtilization() * 1000.0) / 10.0;
     findings.add(new Finding(
         artifact.artifact().id() + "-thread-cpu-hotspot",
         FindingSeverity.MEDIUM,
         FindingCategory.THREADING,
         "CPU hotspot thread",
-        top.name() + " has accumulated " + top.cpuTimeMillis()
-            + "ms CPU time in the dump header.",
-        0.65,
+        top.thread().name() + " consumed " + top.cpuDeltaMillis() + "ms CPU over "
+            + top.elapsedMillis() + "ms between thread dumps, approximately "
+            + utilizationPercent + "% of one core.",
+        0.82,
         List.of(artifact.artifact().id()),
         List.of(),
         List.of(new Remediation(
             "Validate whether the hot stack is expected for this JVM role.",
             RemediationType.CODE_CHANGE,
             "Pair this thread dump with JFR or async-profiler to confirm sustained CPU consumption.",
-            "Thread dump CPU counters are a useful hint but not a full profile.")),
-        mapOf("threads", hotThreads.stream().map(ThreadAnalyzer::threadSummary).toList()))
+            "CPU growth across timestamped dumps is stronger evidence than a single cumulative counter.")),
+        mapOf("threads", hotThreads.stream().map(hotspot -> mapOf(
+            "thread", hotspot.thread().name(),
+            "cpuDeltaMillis", hotspot.cpuDeltaMillis(),
+            "elapsedMillis", hotspot.elapsedMillis(),
+            "estimatedCoreUtilization", hotspot.coreUtilization())).toList()))
         .withReliability(FindingReliability.HEURISTIC));
+  }
+
+  private static Optional<CpuHotspot> cpuHotspot(
+      ThreadSample current,
+      ThreadSample previous,
+      long elapsedMillis) {
+    if (previous == null) {
+      return Optional.empty();
+    }
+    long cpuDeltaMillis = current.cpuTimeMillis() - previous.cpuTimeMillis();
+    double coreUtilization = cpuDeltaMillis / (double) elapsedMillis;
+    if (cpuDeltaMillis < CPU_HOTSPOT_MIN_DELTA_MILLIS
+        || coreUtilization < CPU_HOTSPOT_MIN_CORE_UTILIZATION) {
+      return Optional.empty();
+    }
+    return Optional.of(new CpuHotspot(current, cpuDeltaMillis, elapsedMillis, coreUtilization));
   }
 
   private static void addThreadPoolExhaustionFindings(
@@ -338,8 +374,14 @@ public final class ThreadAnalyzer implements Analyzer {
     Map<String, List<String>> waiters = new LinkedHashMap<>();
     Map<String, ThreadLock> locks = new LinkedHashMap<>();
     for (ThreadSample thread : snapshot.threads()) {
-      ThreadLock waiting = thread.waitingLock();
+      ThreadLock waiting = contentionLock(thread);
       if (waiting == null) {
+        continue;
+      }
+      String owner = waiting.ownerThreadName().isBlank()
+          ? lockOwners.getOrDefault(waiting.identity(), "")
+          : waiting.ownerThreadName();
+      if (owner.equals(thread.name())) {
         continue;
       }
       waiters.computeIfAbsent(waiting.identity(), ignored -> new ArrayList<>()).add(thread.name());
@@ -353,6 +395,14 @@ public final class ThreadAnalyzer implements Analyzer {
         })
         .sorted(Comparator.comparing((LockContention contention) -> contention.waitingThreads().size()).reversed())
         .toList();
+  }
+
+  private static ThreadLock contentionLock(ThreadSample thread) {
+    if (thread.waitingToLock() != null) {
+      return thread.waitingToLock();
+    }
+    ThreadLock waitingOn = thread.waitingOnLock();
+    return waitingOn != null && waitingOn.source().equals("parking to wait for") ? waitingOn : null;
   }
 
   private static List<StackGroup> stackGroups(ThreadDumpSnapshot snapshot) {
@@ -490,14 +540,6 @@ public final class ThreadAnalyzer implements Analyzer {
             + (frame.lineNumber() >= 0 ? ":" + frame.lineNumber() : "") + ")");
   }
 
-  private static Map<String, Object> threadSummary(ThreadSample thread) {
-    return mapOf(
-        "name", thread.name(),
-        "state", thread.state(),
-        "cpuTimeMillis", thread.cpuTimeMillis(),
-        "topFrame", thread.stackTrace().isEmpty() ? "" : formatFrame(thread.stackTrace().getFirst()));
-  }
-
   private static Map<String, Object> mapOf(Object... values) {
     Map<String, Object> result = new LinkedHashMap<>();
     for (int i = 0; i < values.length; i += 2) {
@@ -513,6 +555,12 @@ public final class ThreadAnalyzer implements Analyzer {
       edges = edges == null ? List.of() : List.copyOf(edges);
     }
   }
+
+  private record CpuHotspot(
+      ThreadSample thread,
+      long cpuDeltaMillis,
+      long elapsedMillis,
+      double coreUtilization) {}
 
   public record LockContention(ThreadLock lock, String ownerThreadName, List<String> waitingThreads) {
     public LockContention {
