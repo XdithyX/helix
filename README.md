@@ -17,11 +17,13 @@ Helix is an active engineering project, not a hosted observability service or a 
 
 ## Demo
 
-[![Watch the product catalog investigation](docs/media/product-catalog-investigation.jpg)](https://github.com/XdithyX/helix/releases/download/demo-video/product-catalog-investigation.mp4)
+https://github.com/user-attachments/assets/00c2de5e-5eb5-48d9-989f-4890d6518915
 
-[Watch the video (2:34)](https://github.com/XdithyX/helix/releases/download/demo-video/product-catalog-investigation.mp4) — a Spring Boot product API under load,
+A 2-minute 34-second walkthrough of a Spring Boot product API under load,
 JVM artifact capture, Helix analysis, and an evidence-backed MCP investigation.
 The local workload uses generated oversized product inputs.
+
+[Download the full-quality video](https://github.com/XdithyX/helix/releases/download/demo-video/product-catalog-investigation.mp4)
 
 ## Why Helix
 
