@@ -15,6 +15,14 @@ Helix is an active engineering project, not a hosted observability service or a 
 | Interfaces | CLI with text and JSON reports; local MCP server with read-only diagnostic tools |
 | Maturity | Working post-incident analysis platform under active development |
 
+## Demo
+
+[![Watch the product catalog investigation](docs/media/product-catalog-investigation.jpg)](https://github.com/XdithyX/helix/releases/download/demo-video/product-catalog-investigation.mp4)
+
+[Watch the video (2:34)](https://github.com/XdithyX/helix/releases/download/demo-video/product-catalog-investigation.mp4) — a Spring Boot product API under load,
+JVM artifact capture, Helix analysis, and an evidence-backed MCP investigation.
+The local workload uses generated oversized product inputs.
+
 ## Why Helix
 
 Most diagnostic tools analyze one artifact at a time. Production incidents rarely fit that boundary: an OOM investigation may require the allocation site from JFR, retained objects from a heap dump, and reclamation behavior from a GC log.
